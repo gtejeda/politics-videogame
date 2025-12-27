@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_PARTYKIT_HOST=party:1999
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: npm run dev
+    depends_on:
+      - party
+
+  party:
+    build:
+      context: .
+      dockerfile: Dockerfile.party
+    ports:
+      - "1999:1999"
+    volumes:
+      - ./party:/app/party
+      - ./src/lib/game:/app/src/lib/game
+    command: npx partykit dev --port 1999

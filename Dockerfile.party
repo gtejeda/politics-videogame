@@ -1,0 +1,14 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm install
+
+COPY party ./party
+COPY src/lib/game ./src/lib/game
+COPY partykit.json ./
+
+EXPOSE 1999
+
+CMD ["npx", "partykit", "dev", "--port", "1999"]
