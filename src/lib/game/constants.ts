@@ -73,6 +73,18 @@ export const TIMING = {
   RECONNECTION_WINDOW_MS: 30000, // 30 seconds
   ROOM_CLEANUP_HOURS: 2,
   STATE_SYNC_TARGET_MS: 2000,
+  TURN_RESULTS_TIMEOUT_MS: 30000, // 30 seconds before auto-acknowledge
+  AFK_TIMEOUT_MS: 60000, // 60 seconds before marked AFK
+} as const;
+
+// ============================================
+// AFK Settings
+// ============================================
+
+export const AFK_SETTINGS = {
+  TIMEOUT_MS: 60000,           // Time before player marked AFK
+  INFLUENCE_PENALTY: 1,        // Influence lost per AFK timeout
+  AUTO_CONTINUE_DELAY_MS: 30000, // 30s before auto-continue on Turn Results
 } as const;
 
 // ============================================

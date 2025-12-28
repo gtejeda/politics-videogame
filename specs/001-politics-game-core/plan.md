@@ -53,6 +53,8 @@ Key technical approach:
 | XVI. Coopetition | ✅ | Need votes to move (cooperation) + race to win (competition) + Support Token deals |
 | XVII. Education as Pillar | ✅ | Historical Parallel notes on cards; Collapse Debrief; post-game political concept summary |
 
+**Note on Principle III (Systems Over Individuals)**: The base game models institutions implicitly rather than explicitly. Policy effects on Budget represent fiscal/economic institutions; effects on Stability represent social/political institutions; the voting mechanic represents legislative process. This satisfies the principle's intent ("No single card or move may bypass institutional constraints") because all player actions flow through the shared resource system. Explicit institution cards (Legislature, Courts, Markets, Public Opinion) are candidates for future expansion.
+
 **Note on Principle X**: The base game uses a single race-based victory condition (first to End with ≥3 Influence) with ideology-based strategy variations. This satisfies the principle through strategic diversity rather than multiple victory conditions. A planned **Advanced Mode** expansion will add 5 distinct victory paths (Race, Economic, Stability, Influence, Coalition) for players seeking deeper strategic variety. See spec.md "Future Expansions" section for details.
 
 ## Project Structure

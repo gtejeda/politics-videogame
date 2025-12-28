@@ -7,6 +7,8 @@ import { useGameState, getLocalPlayer, isLocalPlayerHost } from '@/lib/hooks/use
 import { Lobby } from '@/components/game/Lobby';
 import { Board } from '@/components/game/Board';
 import { Results } from '@/components/game/Results';
+import { LoadingState } from '@/components/ui/spinner';
+import { useGameToasts } from '@/lib/hooks/useGameToasts';
 
 export default function RoomPage() {
   const params = useParams();
@@ -15,6 +17,9 @@ export default function RoomPage() {
 
   const { state: localPlayer, isLoaded: playerLoaded, setLastRoomId } = useLocalPlayer();
   const [gameState, gameActions] = useGameState(roomId);
+
+  // Show toast notifications for game events
+  useGameToasts(gameState);
 
   // Join room when connected
   useEffect(() => {
@@ -31,9 +36,7 @@ export default function RoomPage() {
   if (!playerLoaded) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <div className="text-center">
-          <div className="animate-pulse text-muted-foreground">Loading player...</div>
-        </div>
+        <LoadingState message="Loading player data..." />
       </div>
     );
   }
@@ -42,10 +45,10 @@ export default function RoomPage() {
   if (!gameState.connected) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <div className="text-center">
-          <div className="animate-pulse text-muted-foreground">Connecting to room...</div>
-          <p className="mt-2 text-sm text-muted-foreground">Room: {roomId}</p>
-        </div>
+        <LoadingState
+          message="Connecting to room..."
+          submessage={`Room: ${roomId}`}
+        />
       </div>
     );
   }
@@ -54,10 +57,10 @@ export default function RoomPage() {
   if (!gameState.roomState) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <div className="text-center">
-          <div className="animate-pulse text-muted-foreground">Joining room...</div>
-          <p className="mt-2 text-sm text-muted-foreground">Room: {roomId}</p>
-        </div>
+        <LoadingState
+          message="Joining room..."
+          submessage={`Room: ${roomId}`}
+        />
       </div>
     );
   }
@@ -102,6 +105,9 @@ export default function RoomPage() {
           roomState={gameState.roomState}
           localPlayerId={gameState.localPlayerId}
           gameActions={gameActions}
+          turnResultsData={gameState.turnResultsData}
+          hasAcknowledgedResults={gameState.hasAcknowledgedResults}
+          afkPlayers={gameState.afkPlayers}
         />
       );
 

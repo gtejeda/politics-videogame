@@ -105,6 +105,7 @@ Based on plan.md structure:
 - [X] T034 [US1] Implement ideology selection UI with all 5 options in components/game/IdeologyPicker.tsx
 - [X] T035 [US1] Handle selectIdeology message in party server in lib/party/game-room.ts
 - [X] T036 [US1] Add start game button (host only, 3-5 players required) in lobby.tsx
+- [X] T036a [US1] Add player count validation: prevent game start with <3 players, reject joins when room has 5 players with error message, in lib/party/game-room.ts
 - [X] T037 [US1] Handle startGame message and transition to playing state in lib/party/game-room.ts
 
 ### Game Board View
@@ -120,6 +121,8 @@ Based on plan.md structure:
 - [X] T043 [US1] Handle rollDice message in party server in lib/party/game-room.ts
 - [X] T044 [US1] Create 5 sample Decision Cards for Early Term zone in lib/game/cards/early-term.ts
 - [X] T045 [US1] Implement card drawing logic in party server in lib/party/game-room.ts
+- [N/A] T045a [US1] ~~Implement hidden hand mechanics~~ - Removed: game uses shared card model, not per-player hands
+- [N/A] T045b [US1] ~~Add hand visibility rules~~ - Removed: FR-011 satisfied by hidden votes and influence ranges instead
 - [X] T046 [US1] Create DecisionCard component showing options with tradeoffs in components/game/DecisionCard.tsx
 
 ### Turn Flow - Deliberation & Proposing
@@ -135,14 +138,30 @@ Based on plan.md structure:
 - [X] T052 [US1] Implement useVoting hook for vote submission in lib/hooks/useVoting.ts
 - [X] T053 [US1] Handle castVote message in party server in lib/party/game-room.ts
 - [X] T054 [US1] Implement vote reveal logic (after all votes) in party server in lib/party/game-room.ts
-- [ ] T055 [US1] Create VoteReveal animation component in components/animations/VoteReveal.tsx
+- [X] T055 [US1] Create VoteReveal animation component in components/animations/VoteReveal.tsx
 - [X] T056 [US1] Implement turn resolution (nation changes, movements) in party server in lib/party/game-room.ts
-- [ ] T057 [US1] Create BoardMovement animation component in components/animations/BoardMovement.tsx
+- [X] T057 [US1] Create BoardMovement animation component in components/animations/BoardMovement.tsx
+
+### Turn Results Screen (FR-015)
+
+- [X] T056a [US1] Create blocking TurnResults full-screen modal in components/game/TurnResults.tsx
+- [X] T056b [US1] Add acknowledgment tracking (pendingAcks set) in party server state in lib/party/game-room.ts
+- [X] T056c [US1] Handle acknowledgeTurnResults message and advance only when all acknowledged in party/index.ts
+- [X] T056d [US1] Add 30-second timeout with auto-acknowledge for AFK players in lib/party/game-room.ts
+- [X] T056e [US1] Display acknowledgment checkmarks showing which players have continued in TurnResults component
 
 ### Connection Handling
 
 - [X] T058 [US1] Implement reconnection handling (30s window) in lib/party/game-room.ts
 - [X] T059 [US1] Add connection status indicator in PlayerTrack component
+
+### AFK Handling
+
+- [X] T059a [US1] Add configurable AFK timeout setting (default 60 seconds) in lib/game/constants.ts
+- [X] T059b [US1] Implement AFK detection timer per player in party server in lib/party/game-room.ts
+- [X] T059c [US1] Apply AFK penalty (-1 influence per timeout) without eliminating player in lib/party/game-room.ts
+- [X] T059d [US1] Broadcast playerAfk message and show AFK indicator in PlayerTrack component
+- [X] T059e [US1] Auto-skip AFK player's turn if they are active player in party server
 
 **Checkpoint**: User Story 1 complete - players can create, join, and play through turns
 
@@ -156,30 +175,42 @@ Based on plan.md structure:
 
 ### Complete Card Decks
 
-- [ ] T060 [P] [US2] Create 15 Decision Cards for Mid-Term zone in lib/game/cards/mid-term.ts
-- [ ] T061 [P] [US2] Create 10 Decision Cards for Crisis Zone in lib/game/cards/crisis-zone.ts
-- [ ] T062 [P] [US2] Create 10 Decision Cards for Late Term zone in lib/game/cards/late-term.ts
-- [ ] T063 [US2] Implement zone-based deck selection in party server (based on player positions) in lib/party/game-room.ts
+- [X] T060 [P] [US2] Create 15 Decision Cards for Mid-Term zone in lib/game/cards/mid-term.ts
+- [X] T061 [P] [US2] Create 10 Decision Cards for Crisis Zone in lib/game/cards/crisis-zone.ts
+- [X] T062 [P] [US2] Create 10 Decision Cards for Late Term zone in lib/game/cards/late-term.ts
+- [X] T063 [US2] Implement zone-based deck selection in party server (based on player positions) in lib/party/game-room.ts
 
 ### Tradeoff Visualization
 
-- [ ] T064 [US2] Enhance DecisionCard to show Budget/Stability changes prominently in components/game/DecisionCard.tsx
-- [ ] T065 [US2] Add ideology alignment indicators (✓/✗) per option in DecisionCard
-- [ ] T066 [US2] Create card draw animation with CardReveal component in components/animations/CardReveal.tsx
+- [X] T064 [US2] Enhance DecisionCard to show Budget/Stability changes prominently in components/game/DecisionCard.tsx
+- [X] T065 [US2] Add ideology alignment indicators (✓/✗) per option in DecisionCard
+- [X] T066 [US2] Create card draw animation with CardReveal component in components/animations/CardReveal.tsx
 
 ### Delayed Consequences
 
-- [ ] T067 [US2] Implement nation state modifiers effect on movement in lib/game/rules.ts
-- [ ] T068 [US2] Add visual indicators for nation state thresholds (stable/crisis) in NationTrack
-- [ ] T069 [US2] Implement influence gain/loss on ideology alignment in lib/party/game-room.ts
+- [X] T067 [US2] Implement nation state modifiers effect on movement in lib/game/rules.ts
+- [X] T068 [US2] Add visual indicators for nation state thresholds (stable/crisis) in NationTrack
+- [X] T069 [US2] Implement influence gain/loss on ideology alignment in lib/game/state-machine.ts and lib/game/rules.ts
+- [X] T069a [US2] Implement partial influence visibility - show exact values only for self, ranges for others (Low/Med/High) in components/game/PlayerTrack.tsx
 
 ### Collapse Handling
 
-- [ ] T070 [US2] Implement collapse detection and game end in party server in lib/party/game-room.ts
-- [ ] T071 [US2] Create collapse screen with debrief in app/(game)/room/[roomId]/results.tsx
-- [ ] T072 [US2] Add historical parallels to collapse debrief data structure in lib/game/debrief.ts
+- [X] T070 [US2] Implement collapse detection and game end in party server in lib/party/game-room.ts
+- [X] T071 [US2] Create collapse screen with debrief in components/game/Results.tsx
+- [X] T072 [US2] Add historical parallels to collapse debrief data structure in lib/game/debrief.ts
 
-**Checkpoint**: User Story 2 complete - full tradeoff mechanics working
+### More Information Popup (FR-017)
+
+- [X] T072a [US2] Define IdeologyPerspective type in lib/game/types.ts (ideology, typicalStance, likelyVote fields)
+- [X] T072b [P] [US2] Add ideologyPerspectives array to DecisionCard type in lib/game/types.ts
+- [X] T072c [US2] Create MoreInfoPopup component with comparison table in components/game/MoreInfoPopup.tsx
+- [X] T072d [US2] Add "More Info" button trigger to DecisionCard component (visible during deliberation/voting phases)
+- [X] T072e [P] [US2] Add ideology perspectives data to Early Term cards in lib/game/cards/early-term.ts
+- [X] T072f [P] [US2] Add ideology perspectives data to Mid-Term cards in lib/game/cards/mid-term.ts
+- [X] T072g [P] [US2] Add ideology perspectives data to Crisis Zone cards in lib/game/cards/crisis-zone.ts
+- [X] T072h [P] [US2] Add ideology perspectives data to Late Term cards in lib/game/cards/late-term.ts
+
+**Checkpoint**: User Story 2 complete - full tradeoff mechanics working with educational context
 
 ---
 
@@ -191,23 +222,32 @@ Based on plan.md structure:
 
 ### Support Token System
 
-- [ ] T073 [US3] Create DealTracker component showing tokens given/received in components/game/DealTracker.tsx
-- [ ] T074 [US3] Implement useDeals hook for token management in lib/hooks/useDeals.ts
-- [ ] T075 [US3] Handle giveToken message in party server in lib/party/game-room.ts
-- [ ] T076 [US3] Add token transfer animation (drag gesture) in DealTracker component
-- [ ] T077 [US3] Implement deal resolution logic (honored/broken) on vote in lib/party/game-room.ts
-- [ ] T078 [US3] Add influence change effects for broken deals (+1 holder, -1 breaker) in lib/party/game-room.ts
+- [X] T073 [US3] Create DealTracker component showing tokens given/received in components/game/DealTracker.tsx
+- [X] T074 [US3] Implement useDeals hook for token management in lib/hooks/useDeals.ts
+- [X] T075 [US3] Handle giveToken message in party server in lib/party/game-room.ts
+- [X] T076 [US3] Add token transfer animation (drag gesture) in DealTracker component
+- [X] T077 [US3] Implement deal resolution logic (honored/broken) on vote in lib/party/game-room.ts
+- [X] T078 [US3] Add influence change effects for broken deals (+1 holder, -1 breaker) in lib/party/game-room.ts
 
 ### Influence Spending
 
-- [ ] T079 [US3] Add influence spending UI in VotingPanel (buy extra votes) in components/game/VotingPanel.tsx
-- [ ] T080 [US3] Implement influence spending for extra movement in lib/game/rules.ts
-- [ ] T081 [US3] Add influence spending to negate backward movement in VotingPanel
+- [X] T079 [US3] Add influence spending UI in VotingPanel (buy extra votes) in components/game/VotingPanel.tsx
+- [X] T080 [US3] Implement influence spending for extra movement in lib/game/rules.ts
+- [X] T081 [US3] Add influence spending to negate backward movement in VotingPanel
 
 ### Negotiation Support
 
-- [ ] T082 [US3] Add simple chat/negotiation message system in party server in lib/party/game-room.ts
-- [ ] T083 [US3] Create chat message display component in components/game/ChatPanel.tsx
+- [X] T082 [US3] Add simple chat/negotiation message system in party server in lib/party/game-room.ts
+- [X] T083 [US3] Create chat message display component in components/game/ChatPanel.tsx
+
+### Crisis Event System
+
+- [X] T084 [US3] Define crisis event data structure (type, severity, contribution threshold, consequences) in lib/game/crises.ts
+- [X] T085 [P] [US3] Create 5 sample crisis events (economic crash, social unrest, external threat, institutional breakdown, resource shortage) in lib/game/crises.ts
+- [X] T086 [US3] Implement crisis trigger logic based on nation state thresholds in lib/party/game-room.ts
+- [X] T087 [US3] Create CrisisPanel component showing active crisis and contribution options in components/game/CrisisPanel.tsx
+- [X] T088 [US3] Handle contributeToCrisis message in party server (resource contribution) in lib/party/game-room.ts
+- [X] T089 [US3] Implement crisis resolution (success/failure based on total contributions) in lib/party/game-room.ts
 
 **Checkpoint**: User Story 3 complete - coopetition mechanics working
 
@@ -221,16 +261,16 @@ Based on plan.md structure:
 
 ### Concept Tracking
 
-- [ ] T084 [US4] Define political concepts list (coalition building, budget constraints, etc.) in lib/game/concepts.ts
-- [ ] T085 [US4] Implement concept tracking during game (which concepts were demonstrated) in lib/party/game-room.ts
-- [ ] T086 [US4] Store turn history for post-game debrief in party server state
+- [X] T090 [US4] Define political concepts list (coalition building, budget constraints, etc.) in lib/game/concepts.ts
+- [X] T091 [US4] Implement concept tracking during game (which concepts were demonstrated) in lib/party/game-room.ts
+- [X] T092 [US4] Store turn history for post-game debrief in party server state
 
 ### Post-Game Summary
 
-- [ ] T087 [US4] Create results page with victory/collapse outcome in app/(game)/room/[roomId]/results.tsx
-- [ ] T088 [US4] Display political concepts with examples from the game in results page
-- [ ] T089 [US4] Add historical parallel notes to card display (when available) in DecisionCard
-- [ ] T090 [US4] Create collapse debrief explaining what went wrong and real-world parallels
+- [X] T093 [US4] Create results page with victory/collapse outcome in app/(game)/room/[roomId]/results.tsx
+- [X] T094 [US4] Display political concepts with examples from the game in results page
+- [X] T095 [US4] Add historical parallel notes to card display (when available) in DecisionCard
+- [X] T096 [US4] Create collapse debrief explaining what went wrong and real-world parallels
 
 **Checkpoint**: User Story 4 complete - educational pillar functional
 
@@ -244,14 +284,14 @@ Based on plan.md structure:
 
 ### Victory Mechanics
 
-- [ ] T091 [US5] Implement victory check on each resolution (position + influence) in lib/party/game-room.ts
-- [ ] T092 [US5] Add "waiting" state for players at end with <3 Influence in lib/game/rules.ts
-- [ ] T093 [US5] Implement tiebreaker (highest influence if same turn) in lib/party/game-room.ts
+- [X] T097 [US5] Implement victory check on each resolution (position + influence) in lib/party/game-room.ts
+- [X] T098 [US5] Add "waiting" state for players at end with <3 Influence in lib/game/rules.ts
+- [X] T099 [US5] Implement tiebreaker (highest influence if same turn) in lib/party/game-room.ts
 
 ### Victory Screen
 
-- [ ] T094 [US5] Create victory screen showing winner and final positions in results.tsx
-- [ ] T095 [US5] Add ideology-based strategy summary (how winner's ideology helped) in results page
+- [X] T100 [US5] Create victory screen showing winner and final positions in results.tsx
+- [X] T101 [US5] Add ideology-based strategy summary (how winner's ideology helped) in results page
 
 **Checkpoint**: User Story 5 complete - full game loop working
 
@@ -263,22 +303,22 @@ Based on plan.md structure:
 
 ### Animations & UX
 
-- [ ] T096 [P] Add reduced motion preference support in app/layout.tsx
-- [ ] T097 [P] Implement mobile swipe gestures for voting in VotingPanel
-- [ ] T098 [P] Add loading states for all async operations
-- [ ] T099 [P] Implement toast notifications for game events (player joined, deal broken, etc.)
+- [X] T102 [P] Add reduced motion preference support in app/layout.tsx
+- [X] T103 [P] Implement mobile swipe gestures for voting in VotingPanel
+- [X] T104 [P] Add loading states for all async operations
+- [X] T105 [P] Implement toast notifications for game events (player joined, deal broken, etc.)
 
 ### Performance & Reliability
 
-- [ ] T100 [P] Add optimistic UI updates for common actions (vote, roll)
-- [ ] T101 [P] Implement room auto-cleanup after 2 hours inactivity in party server
-- [ ] T102 [P] Add error boundary and fallback UI in app/layout.tsx
+- [X] T106 [P] Add optimistic UI updates for common actions (vote, roll)
+- [X] T107 [P] Implement room auto-cleanup after 2 hours inactivity in party server
+- [X] T108 [P] Add error boundary and fallback UI in app/layout.tsx
 
 ### Documentation & Validation
 
-- [ ] T103 Run quickstart.md validation - verify all steps work
-- [ ] T104 Add 5 more Decision Cards per zone (polish content)
-- [ ] T105 Verify all cards have historical notes for educational value
+- [X] T109 Run quickstart.md validation - verify all steps work
+- [X] T110 Add 5 more Decision Cards per zone (polish content)
+- [X] T111 Verify all cards have historical notes for educational value
 
 ---
 
@@ -315,6 +355,7 @@ Based on plan.md structure:
 - All Foundational tasks marked [P] can run in parallel
 - Once US1 complete: US2, US3, US5 can proceed in parallel
 - All card deck tasks (T060-T062) can run in parallel
+- All ideology perspectives tasks (T072e-T072h) can run in parallel
 - All Polish tasks marked [P] can run in parallel
 
 ---
@@ -326,6 +367,12 @@ Based on plan.md structure:
 Task: "Create 15 Decision Cards for Mid-Term zone in lib/game/cards/mid-term.ts"
 Task: "Create 10 Decision Cards for Crisis Zone in lib/game/cards/crisis-zone.ts"
 Task: "Create 10 Decision Cards for Late Term zone in lib/game/cards/late-term.ts"
+
+# Launch all ideology perspectives content in parallel (after T072a-d complete):
+Task: "Add ideology perspectives data to Early Term cards in lib/game/cards/early-term.ts"
+Task: "Add ideology perspectives data to Mid-Term cards in lib/game/cards/mid-term.ts"
+Task: "Add ideology perspectives data to Crisis Zone cards in lib/game/cards/crisis-zone.ts"
+Task: "Add ideology perspectives data to Late Term cards in lib/game/cards/late-term.ts"
 ```
 
 ---
@@ -342,10 +389,10 @@ Task: "Create 10 Decision Cards for Late Term zone in lib/game/cards/late-term.t
 
 ### Incremental Delivery
 
-1. Setup + Foundational → Foundation ready (32 tasks)
-2. + User Story 1 → Playable MVP (32 tasks)
-3. + User Story 2 → Full card system (13 tasks)
-4. + User Story 3 → Coopetition mechanics (11 tasks)
+1. Setup + Foundational → Foundation ready (27 tasks)
+2. + User Story 1 → Playable MVP (34 tasks)
+3. + User Story 2 → Full card system (14 tasks)
+4. + User Story 3 → Coopetition mechanics (17 tasks)
 5. + User Story 4 → Educational features (7 tasks)
 6. + User Story 5 → Complete victory conditions (5 tasks)
 7. + Polish → Production ready (10 tasks)
@@ -353,7 +400,7 @@ Task: "Create 10 Decision Cards for Late Term zone in lib/game/cards/late-term.t
 ### Suggested MVP Scope
 
 Complete **Phase 1 + Phase 2 + Phase 3 (US1)** for minimal playable game:
-- 59 tasks total for MVP
+- 61 tasks total for MVP
 - Players can: create room, join, pick ideology, play turns, see vote results, move on board
 
 ---
@@ -364,13 +411,15 @@ Complete **Phase 1 + Phase 2 + Phase 3 (US1)** for minimal playable game:
 |-------|------------|------------|----------------|
 | 1 | Setup | 8 | 7 |
 | 2 | Foundational | 19 | 10 |
-| 3 | US1 (Join & Play) | 32 | 0 (sequential flow) |
-| 4 | US2 (Tradeoffs) | 13 | 3 |
-| 5 | US3 (Coopetition) | 11 | 0 |
+| 3 | US1 (Join & Play) | 42 | 0 (sequential flow) |
+| 4 | US2 (Tradeoffs) | 22 | 7 |
+| 5 | US3 (Coopetition) | 17 | 1 |
 | 6 | US4 (Education) | 7 | 0 |
 | 7 | US5 (Victory) | 5 | 0 |
 | 8 | Polish | 10 | 6 |
-| **Total** | | **105** | **26** |
+| **Total** | | **130** | **31** |
+
+*Note: T045a and T045b marked N/A (removed from scope). T056a-e and T059a-e added for Turn Results and AFK handling. T072a-h added for FR-017 More Information popup.*
 
 ---
 
@@ -381,4 +430,4 @@ Complete **Phase 1 + Phase 2 + Phase 3 (US1)** for minimal playable game:
 - Each user story should be independently completable and testable after US1
 - Commit after each task or logical group
 - Stop at any checkpoint to validate story independently
-- Decision Card content (T044, T060-T062, T104) can be expanded iteratively
+- Decision Card content (T044, T060-T062, T110) can be expanded iteratively

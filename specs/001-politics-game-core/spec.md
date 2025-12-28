@@ -93,33 +93,46 @@ Players race to reach the End of the political path first while maintaining suff
 - How does the system handle a player who goes AFK (away from keyboard)? (After configurable timeout, player's influence is reduced but not eliminated; they can rejoin)
 - What happens when a policy has no remaining tradeoff due to game state? (Policy is disabled until conditions change; alternatives are highlighted)
 - How does the game handle conflicting simultaneous actions from multiple players? (Deterministic resolution order based on game clock; no player has inherent priority)
+- What happens if a player doesn't acknowledge the Turn Results screen? (After 30 seconds timeout, unacknowledged players are auto-continued and marked as "missed results"; game advances)
+- What happens when fewer than 3 players try to start a game? (Game cannot start; host sees "Need at least 3 players to begin" message; lobby remains open for more players)
+- What happens when a 6th player tries to join a full room? (Join is rejected with "Room is full (max 5 players)" message; player is returned to join screen)
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 
-- **FR-001**: System MUST support real-time multiplayer sessions with 2-6 simultaneous players sharing the same game world state
+- **FR-001**: System MUST support real-time multiplayer sessions with 3-5 simultaneous players sharing the same game world state
 - **FR-002**: System MUST synchronize game state across all connected players with maximum 2-second latency for visible actions
 - **FR-003**: Every policy option MUST present at least one benefit and one cost (tradeoff)
 - **FR-004**: System MUST implement delayed consequences where at least 30% of policy effects manifest after 2+ game cycles
 - **FR-005**: System MUST generate shared crisis events that require coordinated player response to resolve
+  - *Crisis Triggers*: A crisis event is drawn when ANY of the following occur: (a) Nation Stability drops to ≤5; (b) Nation Budget drops to ≤3; (c) Any player enters the Crisis Zone (board positions 12-17); (d) Random chance: 15% per turn after turn 5 (server-side seeded RNG using room ID + turn number for deterministic replay)
+  - *Crisis Resolution*: Players collectively contribute Influence; crisis resolves when contribution threshold met or 2 turns pass
 - **FR-006**: Players MUST have individual victory conditions that can conflict with other players' conditions
 - **FR-007**: System MUST track and display political concepts demonstrated during gameplay
 - **FR-008**: System MUST provide post-game summary linking player decisions to political concepts
 - **FR-009**: System MUST support a primary victory condition (first to reach End with sufficient Influence) with multiple viable strategic approaches based on ideology alignment and resource management; Advanced Mode MAY implement 5 distinct victory conditions (see Future Expansions)
 - **FR-010**: All policy effects and game mechanics MUST be ideologically neutral (no moral labeling of political positions)
 - **FR-011**: Players MUST operate with partial information—not all game state is visible to all players
+  - *Implementation*: (a) Vote intentions are hidden until simultaneous reveal; (b) Other players' exact Influence values are hidden—only ranges (Low 1-3, Medium 4-6, High 7+) are shown; (c) Upcoming crisis triggers are not visible until they occur
 - **FR-012**: System MUST track alliance formation, betrayal, and associated reputation consequences
+  - *Implementation*: Reputation is tracked through Support Tokens. When a player breaks a deal (votes against someone holding their token), the token holder gains +1 Influence and the breaker loses -1 Influence. Token holdings are visible to all players, creating social reputation through transparency.
 - **FR-013**: Loss conditions MUST be traceable to specific player decisions with clear debrief information
 - **FR-014**: Game mechanics MUST work through institutional systems (legislature, courts, markets, public opinion) rather than bypassing them
+  - *Implementation Note*: In the base game, institutions are modeled implicitly through resource effects. Budget changes represent fiscal/economic institutional outcomes; Stability changes represent social/political institutional outcomes. Vote mechanics represent legislative processes. Future expansions may add explicit institution cards.
+- **FR-015**: After each vote resolves, system MUST display a full-screen Turn Results screen showing: (1) vote outcome (passed/failed with vote tally), (2) nation state changes (budget/stability delta with new values), (3) per-player full breakdown including movement components (dice roll, ideology bonus/penalty, nation modifier), influence change with reason (e.g., "aligned with passed policy"), and any token effects; each player MUST click "Continue" to acknowledge, screen displays checkmarks showing which players have acknowledged, and game advances only when ALL players have acknowledged
+- **FR-016**: When a vote fails (majority votes No), system MUST apply consequences: (1) Nation stability decreases by 1 (representing political gridlock), (2) Active player loses 1 Influence (failed to build consensus); these penalties are shown on the Turn Results screen with explanation
+- **FR-017**: Each proposed policy/event MUST have a "More Information" popup accessible to all players showing: (1) a brief comparison of how each of the 5 ideologies typically approaches this type of decision, (2) historical context or real-world parallels where applicable; this popup is optional—players can vote without viewing it
+  - *Availability*: Popup is accessible during the deliberation phase (3-minute timer) AND during the voting phase; not available during other game phases
+  - *Content Format*: 5-row comparison table with columns: Ideology, Typical Stance (1-2 sentences), Likely Vote (Yes/No/Split); historical context appears below the table when available
 
 ### Key Entities
 
-- **Player**: A participant in the game session; has unique identity, current resources, political position, victory progress, and reputation
+- **Player**: A participant in the game session; has unique identity, ideology, current Influence, board position, and Support Tokens (reputation is implicit through token relationships)
 - **Game Session**: A shared game instance with world state, connected players, game clock, and crisis queue
 - **Policy**: An available political action with defined benefits, costs, immediate effects, and delayed effects; ideologically neutral framing
 - **Institution**: A systemic entity (legislature, court, market, public opinion) through which policies are enacted and effects flow
-- **Resource**: A measurable game value (budget, legitimacy, stability, growth) that policies and events modify
+- **Resource**: A measurable game value (Budget, Stability, Influence) that policies and events modify; future expansions may add Growth, Legitimacy, or other resource types
 - **Crisis**: A shared challenge event requiring coordinated player response with collective success/failure outcomes
 - **Alliance**: A temporary agreement between players with negotiated terms and reputation stakes
 - **Victory Condition**: A measurable goal that, when achieved, results in player victory; multiple types exist
@@ -129,7 +142,7 @@ Players race to reach the End of the political path first while maintaining suff
 - Players have stable internet connections suitable for real-time multiplayer gaming
 - Games have a defined start and end (not infinite sandbox)
 - The target audience is interested in learning about politics (educational intent is welcomed, not hidden)
-- Player count of 2-6 is suitable for meaningful coopetition dynamics
+- Player count of 3-5 is suitable for meaningful coopetition dynamics (minimum 3 for coalition formation, maximum 5 for manageable deliberation)
 - Session duration targets 30-90 minutes per complete game
 
 ## Success Criteria *(mandatory)*
@@ -137,7 +150,7 @@ Players race to reach the End of the political path first while maintaining suff
 ### Measurable Outcomes
 
 - **SC-001**: Players can join and begin playing within 60 seconds of launching the game
-- **SC-002**: 95% of player actions are visible to all other players within 2 seconds
+- **SC-002**: 95% of player actions are visible to all other players within 2 seconds (measured via client-side timestamp comparison: action send time vs. broadcast receive time, logged during playtesting sessions)
 - **SC-003**: 100% of policies in the game have documented tradeoffs (verified by design review)
 - **SC-004**: At least 30% of policy effects are delayed by 2+ game cycles (verified by mechanics audit)
 - **SC-005**: In post-game surveys, 80% of players can correctly identify at least 2 political concepts they experienced during play
@@ -146,6 +159,19 @@ Players race to reach the End of the political path first while maintaining suff
 - **SC-008**: When players lose, 85% can identify at least one specific decision that contributed to their loss
 - **SC-009**: In bias audits, no ideology is selected as "optimal" more than 60% of the time across all playtests
 - **SC-010**: Player session completion rate exceeds 75% (players finish games they start)
+
+## Clarifications
+
+### Session 2025-12-27
+
+- Q: After a vote resolves, how should the turn result be presented to players? → A: Full-screen results screen - Blocking screen showing vote outcome, nation changes, and player effects; all players must acknowledge before proceeding
+- Q: What player-specific effects should be displayed on the Turn Results screen? → A: Full breakdown - Movement (with components: dice, ideology bonus/penalty, nation modifier), Influence change (with reason), and any token effects
+- Q: When a vote fails (majority votes No), what consequences should occur? → A: Nation + active player penalty - Nation takes stability hit AND active player loses influence for failing to build consensus
+- Q: How should player acknowledgment of the Turn Results screen work? → A: All must acknowledge - Each player clicks "Continue"; screen shows checkmarks for who has acknowledged; advances when all ready
+- Q: What happens if a player doesn't acknowledge the Turn Results screen (AFK/disconnected)? → A: Timeout with auto-continue - After 30 seconds of waiting, unacknowledged players are auto-continued and marked as "missed results"
+- Q: What content should the "More Information" popup show for a proposed policy/event? → A: All ideologies compared - Brief comparison of how each of the 5 ideologies typically approaches this type of decision
+- Q: When should players be able to access the "More Information" popup? → A: Deliberation + voting - Available during the 3-minute deliberation timer AND during voting phase
+- Q: How should the ideology comparison content be structured in the popup? → A: Comparison table - 5-row table with columns: Ideology, Typical Stance (1-2 sentences), Likely Vote (Yes/No/Split)
 
 ## Future Expansions
 

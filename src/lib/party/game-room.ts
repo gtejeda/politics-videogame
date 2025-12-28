@@ -26,6 +26,7 @@ import {
   generateRoomCode,
   generatePlayerId,
   generateTokenId,
+  TIMING,
 } from '../game/constants';
 import {
   rollDice,
@@ -38,6 +39,13 @@ import {
   calculateMovement,
   getMostAdvancedZone,
 } from '../game/rules';
+import {
+  CrisisEvent,
+  ActiveCrisis,
+  shouldTriggerCrisis,
+  calculateTotalContribution,
+  resolveCrisis,
+} from '../game/crises';
 
 // ============================================
 // Room State Interface
@@ -46,7 +54,7 @@ import {
 export interface GameRoomState {
   id: string;
   status: 'lobby' | 'playing' | 'collapsed' | 'finished';
-  phase: 'waiting' | 'rolling' | 'drawing' | 'deliberating' | 'proposing' | 'voting' | 'revealing' | 'resolving';
+  phase: 'waiting' | 'rolling' | 'drawing' | 'deliberating' | 'proposing' | 'voting' | 'revealing' | 'resolving' | 'showingResults' | 'crisis';
   hostPlayerId: string;
   players: Map<string, Player>;
   nation: NationState;
@@ -62,6 +70,21 @@ export interface GameRoomState {
   modifiedDiceRoll: number | null;
   pendingVotes: Map<string, Vote>;
   timerEndAt: number | null;
+
+  // Turn Results acknowledgment state
+  pendingAcknowledgments: Set<string>; // Player IDs who haven't acknowledged yet
+  resultsTimeoutAt: number | null; // When auto-acknowledge will trigger
+
+  // AFK tracking state
+  playerLastActivity: Map<string, number>; // playerId -> last activity timestamp
+  afkPlayers: Set<string>; // Player IDs currently marked as AFK
+
+  // Crisis state
+  activeCrisis: {
+    crisis: CrisisEvent;
+    contributions: Map<string, number>; // playerId -> contribution amount
+    turnsRemaining: number;
+  } | null;
 
   // History
   history: TurnHistory[];
@@ -92,6 +115,11 @@ export function createInitialRoomState(roomId: string, hostPlayerId: string): Ga
     modifiedDiceRoll: null,
     pendingVotes: new Map(),
     timerEndAt: null,
+    pendingAcknowledgments: new Set(),
+    resultsTimeoutAt: null,
+    playerLastActivity: new Map(),
+    afkPlayers: new Set(),
+    activeCrisis: null,
     history: [],
   };
 }
@@ -129,7 +157,7 @@ export function addPlayerToRoom(
   }
 
   if (state.players.size >= state.settings.maxPlayers) {
-    return { error: 'Room is full' };
+    return { error: `Room is full (max ${state.settings.maxPlayers} players)` };
   }
 
   // Check if player already exists (reconnection)
@@ -193,10 +221,13 @@ export function removePlayerFromRoom(
     // Reassign host if needed
     let newHostId = state.hostPlayerId;
     if (state.hostPlayerId === playerId && newPlayers.size > 0) {
-      newHostId = newPlayers.keys().next().value;
-      const newHost = newPlayers.get(newHostId);
-      if (newHost) {
-        newPlayers.set(newHostId, { ...newHost, isHost: true });
+      const firstKey = newPlayers.keys().next().value;
+      if (firstKey) {
+        newHostId = firstKey;
+        const newHost = newPlayers.get(newHostId);
+        if (newHost) {
+          newPlayers.set(newHostId, { ...newHost, isHost: true });
+        }
       }
     }
 
@@ -257,7 +288,7 @@ export function startGame(
   }
 
   if (state.players.size < state.settings.minPlayers) {
-    return { error: `Need at least ${state.settings.minPlayers} players` };
+    return { error: `Need at least ${state.settings.minPlayers} players to begin` };
   }
 
   if (state.players.size > state.settings.maxPlayers) {
@@ -488,6 +519,103 @@ export function resolveVotes(state: GameRoomState): {
 }
 
 // ============================================
+// Deal Resolution
+// ============================================
+
+export interface DealResolution {
+  tokenId: string;
+  ownerId: string;
+  holderId: string;
+  status: 'honored' | 'broken';
+}
+
+/**
+ * Resolves all active deals after a vote.
+ * A deal is "broken" if the holder voted against the owner's proposal.
+ * A deal is "honored" if the holder voted in favor (or abstained).
+ *
+ * When a deal is broken:
+ * - Holder loses 1 influence (betrayer penalty)
+ * - Owner gains 1 influence (victim compensation)
+ */
+export function resolveDeals(
+  state: GameRoomState,
+  votes: Map<string, Vote>,
+  proposingPlayerId: string,
+  votePassed: boolean
+): { state: GameRoomState; resolutions: DealResolution[] } {
+  const resolutions: DealResolution[] = [];
+  const newTokens = [...state.tokens];
+  const newPlayers = new Map(state.players);
+
+  // Find all active tokens where the owner is the proposing player
+  for (let i = 0; i < newTokens.length; i++) {
+    const token = newTokens[i];
+
+    // Only process active tokens owned by the proposing player
+    if (token.ownerId !== proposingPlayerId || token.status !== 'active') {
+      continue;
+    }
+
+    // Skip if the owner is holding their own token
+    if (token.heldById === token.ownerId) {
+      continue;
+    }
+
+    // Get the holder's vote
+    const holderVote = votes.get(token.heldById);
+    if (!holderVote) continue;
+
+    // Determine if the deal was honored or broken
+    // Deal is broken if holder voted "no" on the owner's proposal
+    const isBroken = holderVote.choice === 'no';
+
+    const resolution: DealResolution = {
+      tokenId: token.id,
+      ownerId: token.ownerId,
+      holderId: token.heldById,
+      status: isBroken ? 'broken' : 'honored',
+    };
+    resolutions.push(resolution);
+
+    // Update token status
+    newTokens[i] = {
+      ...token,
+      status: isBroken ? 'broken' : 'honored',
+    };
+
+    // Apply influence changes for broken deals
+    if (isBroken) {
+      const holder = newPlayers.get(token.heldById);
+      const owner = newPlayers.get(token.ownerId);
+
+      if (holder) {
+        newPlayers.set(token.heldById, {
+          ...holder,
+          influence: Math.max(0, holder.influence - 1), // Betrayer loses 1
+        });
+      }
+
+      if (owner) {
+        newPlayers.set(token.ownerId, {
+          ...owner,
+          influence: owner.influence + 1, // Victim gains 1
+        });
+      }
+    }
+  }
+
+  return {
+    state: {
+      ...state,
+      tokens: newTokens,
+      players: newPlayers,
+    },
+    resolutions,
+  };
+}
+
+// ============================================
 // Turn Advancement
 // ============================================
 
@@ -609,5 +737,360 @@ export function serializeRoomState(state: GameRoomState): RoomStatePayload {
     tokens,
     nation: state.nation,
     settings: state.settings,
+    activeCrisis: state.activeCrisis ? {
+      crisis: state.activeCrisis.crisis,
+      contributions: Object.fromEntries(state.activeCrisis.contributions),
+      turnsRemaining: state.activeCrisis.turnsRemaining,
+    } : null,
+    // Turn Results acknowledgment state
+    pendingAcknowledgments: Array.from(state.pendingAcknowledgments),
+    resultsTimeoutAt: state.resultsTimeoutAt,
   };
+}
+
+// ============================================
+// Turn Results Acknowledgment
+// ============================================
+
+/**
+ * Enter the showingResults phase after vote resolution
+ * Sets up pending acknowledgments for all connected players
+ */
+export function enterShowingResultsPhase(state: GameRoomState): GameRoomState {
+  const connectedPlayerIds = Array.from(state.players.entries())
+    .filter(([_, p]) => p.isConnected)
+    .map(([id]) => id);
+
+  return {
+    ...state,
+    phase: 'showingResults',
+    pendingAcknowledgments: new Set(connectedPlayerIds),
+    resultsTimeoutAt: Date.now() + TIMING.TURN_RESULTS_TIMEOUT_MS,
+  };
+}
+
+/**
+ * Record a player's acknowledgment of turn results
+ * Returns true if all players have now acknowledged
+ */
+export function acknowledgeTurnResults(
+  state: GameRoomState,
+  playerId: string
+): { state: GameRoomState; allAcknowledged: boolean } | { error: string } {
+  if (state.phase !== 'showingResults') {
+    return { error: 'Not in showingResults phase' };
+  }
+
+  if (!state.pendingAcknowledgments.has(playerId)) {
+    // Player already acknowledged or not in pending list
+    return { state, allAcknowledged: state.pendingAcknowledgments.size === 0 };
+  }
+
+  const newPendingAcks = new Set(state.pendingAcknowledgments);
+  newPendingAcks.delete(playerId);
+
+  const allAcknowledged = newPendingAcks.size === 0;
+
+  return {
+    state: {
+      ...state,
+      pendingAcknowledgments: newPendingAcks,
+    },
+    allAcknowledged,
+  };
+}
+
+/**
+ * Clear the showingResults state and prepare for next turn
+ */
+export function clearShowingResultsState(state: GameRoomState): GameRoomState {
+  return {
+    ...state,
+    pendingAcknowledgments: new Set(),
+    resultsTimeoutAt: null,
+  };
+}
+
+// ============================================
+// Crisis Management
+// ============================================
+
+/**
+ * Check if a crisis should trigger based on nation state
+ * Called at the end of each turn resolution
+ */
+export function checkAndTriggerCrisis(
+  state: GameRoomState
+): { state: GameRoomState; triggered: CrisisEvent | null } {
+  // Don't trigger if already in crisis
+  if (state.activeCrisis) {
+    return { state, triggered: null };
+  }
+
+  const crisis = shouldTriggerCrisis(
+    state.nation.stability,
+    state.nation.budget,
+    state.currentTurn,
+    null // No active crisis
+  );
+
+  if (!crisis) {
+    return { state, triggered: null };
+  }
+
+  // Activate the crisis
+  const newState: GameRoomState = {
+    ...state,
+    phase: 'crisis',
+    activeCrisis: {
+      crisis,
+      contributions: new Map(),
+      turnsRemaining: 2, // Crises last 2 turns
+    },
+  };
+
+  return { state: newState, triggered: crisis };
+}
+
+/**
+ * Contribute influence to resolve an active crisis
+ */
+export function contributeToCrisis(
+  state: GameRoomState,
+  playerId: string,
+  amount: number
+): GameRoomState | { error: string } {
+  if (!state.activeCrisis) {
+    return { error: 'No active crisis' };
+  }
+
+  const player = state.players.get(playerId);
+  if (!player) {
+    return { error: 'Player not found' };
+  }
+
+  if (amount <= 0) {
+    return { error: 'Must contribute at least 1 influence' };
+  }
+
+  if (amount > player.influence) {
+    return { error: 'Not enough influence' };
+  }
+
+  const currentContribution = state.activeCrisis.contributions.get(playerId) || 0;
+  const newContribution = currentContribution + amount;
+
+  if (newContribution > state.activeCrisis.crisis.maxContributionPerPlayer) {
+    return { error: `Maximum contribution is ${state.activeCrisis.crisis.maxContributionPerPlayer}` };
+  }
+
+  // Update contributions
+  const newContributions = new Map(state.activeCrisis.contributions);
+  newContributions.set(playerId, newContribution);
+
+  // Deduct influence from player
+  const newPlayers = new Map(state.players);
+  newPlayers.set(playerId, {
+    ...player,
+    influence: player.influence - amount,
+  });
+
+  return {
+    ...state,
+    players: newPlayers,
+    activeCrisis: {
+      ...state.activeCrisis,
+      contributions: newContributions,
+    },
+  };
+}
+
+/**
+ * Resolve the active crisis and apply effects
+ */
+export function resolveCrisisEvent(
+  state: GameRoomState
+): {
+  state: GameRoomState;
+  outcome: 'success' | 'failure';
+  nationChanges: { budgetChange: number; stabilityChange: number };
+} | { error: string } {
+  if (!state.activeCrisis) {
+    return { error: 'No active crisis' };
+  }
+
+  const { crisis, contributions } = state.activeCrisis;
+
+  // Calculate total contribution with ideology bonuses
+  const totalContribution = calculateTotalContribution(
+    contributions,
+    state.players,
+    crisis
+  );
+
+  // Determine outcome
+  const outcome = resolveCrisis(crisis, totalContribution);
+  const effect = outcome === 'success' ? crisis.successEffect : crisis.failureEffect;
+
+  // Apply nation changes
+  const newNation = {
+    stability: Math.max(-5, Math.min(15, state.nation.stability + effect.stabilityChange)),
+    budget: Math.max(-5, Math.min(15, state.nation.budget + effect.budgetChange)),
+  };
+
+  return {
+    state: {
+      ...state,
+      nation: newNation,
+      activeCrisis: null, // Clear the crisis
+      phase: 'waiting', // Return to normal turn flow
+    },
+    outcome,
+    nationChanges: {
+      budgetChange: effect.budgetChange,
+      stabilityChange: effect.stabilityChange,
+    },
+  };
+}
+
+/**
+ * Advance crisis turn counter (called at end of each turn)
+ */
+export function advanceCrisisTurn(
+  state: GameRoomState
+): { state: GameRoomState; shouldResolve: boolean } {
+  if (!state.activeCrisis) {
+    return { state, shouldResolve: false };
+  }
+
+  const newTurnsRemaining = state.activeCrisis.turnsRemaining - 1;
+
+  if (newTurnsRemaining <= 0) {
+    // Crisis will be resolved
+    return { state, shouldResolve: true };
+  }
+
+  return {
+    state: {
+      ...state,
+      activeCrisis: {
+        ...state.activeCrisis,
+        turnsRemaining: newTurnsRemaining,
+      },
+    },
+    shouldResolve: false,
+  };
+}
+
+// ============================================
+// AFK Tracking
+// ============================================
+
+import { AFK_SETTINGS } from '../game/constants';
+
+/**
+ * Update a player's last activity timestamp
+ */
+export function recordPlayerActivity(
+  state: GameRoomState,
+  playerId: string
+): GameRoomState {
+  const newLastActivity = new Map(state.playerLastActivity);
+  newLastActivity.set(playerId, Date.now());
+
+  // Remove from AFK set if they were AFK
+  const newAfkPlayers = new Set(state.afkPlayers);
+  newAfkPlayers.delete(playerId);
+
+  return {
+    ...state,
+    playerLastActivity: newLastActivity,
+    afkPlayers: newAfkPlayers,
+  };
+}
+
+/**
+ * Check for AFK players and apply penalties
+ * Returns the updated state and any players who became AFK
+ */
+export function checkAfkPlayers(
+  state: GameRoomState
+): { state: GameRoomState; newAfkPlayers: Array<{ playerId: string; playerName: string; influenceLost: number; newInfluence: number }> } {
+  const now = Date.now();
+  const newAfkPlayers: Array<{ playerId: string; playerName: string; influenceLost: number; newInfluence: number }> = [];
+  const newPlayers = new Map(state.players);
+  const afkSet = new Set(state.afkPlayers);
+
+  for (const [playerId, player] of state.players) {
+    // Skip if not connected or already AFK
+    if (!player.isConnected || afkSet.has(playerId)) continue;
+
+    const lastActivity = state.playerLastActivity.get(playerId);
+    if (!lastActivity) continue;
+
+    const timeSinceActivity = now - lastActivity;
+
+    if (timeSinceActivity >= AFK_SETTINGS.TIMEOUT_MS) {
+      // Mark as AFK and apply penalty
+      afkSet.add(playerId);
+
+      const influenceLost = Math.min(player.influence, AFK_SETTINGS.INFLUENCE_PENALTY);
+      const newInfluence = Math.max(0, player.influence - influenceLost);
+
+      newPlayers.set(playerId, {
+        ...player,
+        influence: newInfluence,
+      });
+
+      newAfkPlayers.push({
+        playerId,
+        playerName: player.name,
+        influenceLost,
+        newInfluence,
+      });
+    }
+  }
+
+  return {
+    state: {
+      ...state,
+      players: newPlayers,
+      afkPlayers: afkSet,
+    },
+    newAfkPlayers,
+  };
+}
+
+/**
+ * Skip an AFK player's turn and advance to the next player
+ */
+export function skipAfkPlayerTurn(
+  state: GameRoomState
+): GameRoomState {
+  if (!state.activePlayerId) return state;
+
+  // Get next player
+  const playerIds = Array.from(state.players.keys());
+  const currentIndex = playerIds.indexOf(state.activePlayerId);
+  const nextIndex = (currentIndex + 1) % playerIds.length;
+  const nextPlayerId = playerIds[nextIndex];
+
+  return {
+    ...state,
+    activePlayerId: nextPlayerId,
+    phase: 'waiting',
+    diceRoll: null,
+    modifiedDiceRoll: null,
+    currentCard: null,
+    currentProposal: null,
+    timerEndAt: null,
+  };
+}
+
+/**
+ * Check if the active player is AFK
+ */
+export function isActivePlayerAfk(state: GameRoomState): boolean {
+  if (!state.activePlayerId) return false;
+  return state.afkPlayers.has(state.activePlayerId);
 }

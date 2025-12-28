@@ -12,6 +12,7 @@ import type {
   ServerMessage,
   RoomStatePayload,
   PlayerStatePayload,
+  TurnResultsDisplayMessage,
 } from '../game/events';
 import type { Ideology, CardOptionId, VoteChoice } from '../game/types';
 
@@ -24,6 +25,9 @@ export interface GameState {
   roomState: RoomStatePayload | null;
   error: string | null;
   localPlayerId: string | null;
+  turnResultsData: TurnResultsDisplayMessage | null;
+  hasAcknowledgedResults: boolean;
+  afkPlayers: Set<string>; // Player IDs currently AFK
 }
 
 export interface GameActions {
@@ -36,6 +40,7 @@ export interface GameActions {
   giveToken: (targetPlayerId: string) => void;
   sendChat: (text: string) => void;
   leaveRoom: () => void;
+  acknowledgeTurnResults: () => void;
 }
 
 // ============================================
@@ -48,6 +53,9 @@ export function useGameState(roomId: string): [GameState, GameActions] {
     roomState: null,
     error: null,
     localPlayerId: null,
+    turnResultsData: null,
+    hasAcknowledgedResults: false,
+    afkPlayers: new Set(),
   });
 
   const localPlayerIdRef = useRef<string | null>(null);
@@ -319,6 +327,92 @@ export function useGameState(roomId: string): [GameState, GameActions] {
           error: message.message,
         }));
         break;
+
+      case 'turnResultsDisplay':
+        setState(prev => {
+          if (!prev.roomState) return prev;
+          return {
+            ...prev,
+            roomState: {
+              ...prev.roomState,
+              phase: 'showingResults',
+              pendingAcknowledgments: message.pendingAcknowledgments,
+              resultsTimeoutAt: message.timeoutAt,
+            },
+            turnResultsData: message,
+            hasAcknowledgedResults: false,
+          };
+        });
+        break;
+
+      case 'turnResultsAcknowledged':
+        setState(prev => {
+          if (!prev.roomState) return prev;
+          const isLocalAck = message.playerId === prev.localPlayerId;
+          return {
+            ...prev,
+            roomState: {
+              ...prev.roomState,
+              pendingAcknowledgments: message.pendingAcknowledgments,
+            },
+            turnResultsData: prev.turnResultsData
+              ? { ...prev.turnResultsData, pendingAcknowledgments: message.pendingAcknowledgments }
+              : null,
+            hasAcknowledgedResults: isLocalAck ? true : prev.hasAcknowledgedResults,
+          };
+        });
+        break;
+
+      case 'turnResultsComplete':
+        setState(prev => {
+          if (!prev.roomState) return prev;
+          return {
+            ...prev,
+            roomState: {
+              ...prev.roomState,
+              pendingAcknowledgments: [],
+              resultsTimeoutAt: null,
+            },
+            turnResultsData: null,
+            hasAcknowledgedResults: false,
+          };
+        });
+        break;
+
+      case 'playerAfk':
+        setState(prev => {
+          if (!prev.roomState) return prev;
+          const newAfkPlayers = new Set(prev.afkPlayers);
+          newAfkPlayers.add(message.playerId);
+
+          // Update player influence
+          const updatedPlayers = prev.roomState.players.map(p =>
+            p.id === message.playerId
+              ? { ...p, influence: message.newInfluence }
+              : p
+          );
+
+          return {
+            ...prev,
+            roomState: {
+              ...prev.roomState,
+              players: updatedPlayers,
+            },
+            afkPlayers: newAfkPlayers,
+          };
+        });
+        break;
+
+      case 'playerActive':
+        setState(prev => {
+          const newAfkPlayers = new Set(prev.afkPlayers);
+          newAfkPlayers.delete(message.playerId);
+          return {
+            ...prev,
+            afkPlayers: newAfkPlayers,
+          };
+        });
+        break;
     }
   }, []);
 
@@ -413,6 +507,19 @@ export function useGameState(roomId: string): [GameState, GameActions] {
         playerId: localPlayerIdRef.current,
       });
     }, [sendMessage]),
+
+    acknowledgeTurnResults: useCallback(() => {
+      if (!localPlayerIdRef.current) return;
+      // Get current turn from state
+      const currentTurn = state.roomState?.currentTurn || 0;
+      sendMessage({
+        type: 'acknowledgeTurnResults',
+        playerId: localPlayerIdRef.current,
+        turnNumber: currentTurn,
+      });
+      // Optimistically mark as acknowledged
+      setState(prev => ({ ...prev, hasAcknowledgedResults: true }));
+    }, [sendMessage, state.roomState?.currentTurn]),
   };
 
   return [state, actions];

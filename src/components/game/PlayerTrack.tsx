@@ -3,15 +3,28 @@
 import { cn } from '@/lib/utils';
 import type { PlayerStatePayload } from '@/lib/game/events';
 import { IDEOLOGY_DEFINITIONS } from '@/lib/game/ideologies';
+import { INFLUENCE_THRESHOLDS } from '@/lib/game/constants';
 
 interface PlayerTrackProps {
   player: PlayerStatePayload;
   isActive: boolean;
   isLocal: boolean;
   pathLength: number;
+  isAfk?: boolean;
 }
 
-export function PlayerTrack({ player, isActive, isLocal, pathLength }: PlayerTrackProps) {
+// Get influence level display for non-local players (partial visibility)
+function getInfluenceLevel(influence: number): { label: string; color: string } {
+  if (influence >= INFLUENCE_THRESHOLDS.HIGH) {
+    return { label: 'High', color: 'text-green-600 bg-green-100 dark:bg-green-900 dark:text-green-400' };
+  }
+  if (influence <= INFLUENCE_THRESHOLDS.LOW) {
+    return { label: 'Low', color: 'text-red-600 bg-red-100 dark:bg-red-900 dark:text-red-400' };
+  }
+  return { label: 'Med', color: 'text-amber-600 bg-amber-100 dark:bg-amber-900 dark:text-amber-400' };
+}
+
+export function PlayerTrack({ player, isActive, isLocal, pathLength, isAfk = false }: PlayerTrackProps) {
   const { name, ideology, position, influence, ownTokens, isConnected } = player;
 
   // Calculate progress percentage
@@ -56,6 +69,11 @@ export function PlayerTrack({ player, isActive, isLocal, pathLength }: PlayerTra
         {!isConnected && (
           <span className="text-xs text-muted-foreground">Disconnected</span>
         )}
+        {isConnected && isAfk && (
+          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-700 dark:bg-amber-900 dark:text-amber-300">
+            AFK
+          </span>
+        )}
       </div>
 
       {/* Progress Bar */}
@@ -85,7 +103,25 @@ export function PlayerTrack({ player, isActive, isLocal, pathLength }: PlayerTra
       <div className="mt-2 flex gap-4 text-sm">
         <div className="flex items-center gap-1">
           <span className="text-muted-foreground">Influence:</span>
-          <span className="font-medium">{influence}</span>
+          {isLocal ? (
+            // Local player sees exact influence value
+            <span className={cn(
+              'font-bold rounded px-1.5',
+              influence >= INFLUENCE_THRESHOLDS.HIGH && 'text-green-600 bg-green-100 dark:bg-green-900 dark:text-green-400',
+              influence <= INFLUENCE_THRESHOLDS.LOW && 'text-red-600 bg-red-100 dark:bg-red-900 dark:text-red-400',
+              influence > INFLUENCE_THRESHOLDS.LOW && influence < INFLUENCE_THRESHOLDS.HIGH && 'text-amber-600 bg-amber-100 dark:bg-amber-900 dark:text-amber-400',
+            )}>
+              {influence}
+            </span>
+          ) : (
+            // Other players see influence level (partial information)
+            <span className={cn(
+              'rounded px-1.5 py-0.5 text-xs font-medium',
+              getInfluenceLevel(influence).color
+            )}>
+              {getInfluenceLevel(influence).label}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-1">
           <span className="text-muted-foreground">Tokens:</span>

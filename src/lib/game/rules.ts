@@ -346,6 +346,35 @@ export function applyInfluenceChange(currentInfluence: number, change: number): 
 }
 
 /**
+ * Calculate influence change based on ideology alignment with a passed option
+ * When a vote passes:
+ * - Players aligned with the option gain +1 influence (their values advanced)
+ * - Players opposed to the option lose -1 influence (their values were compromised)
+ *
+ * Educational value: Teaches that political actors gain/lose standing based on outcomes
+ */
+export function calculateIdeologyInfluenceChange(
+  playerIdeology: Ideology | null,
+  option: CardOption
+): number {
+  if (!playerIdeology) return 0;
+
+  // Check if aligned with this option
+  const isAligned = option.aligned.some(a => a.ideology === playerIdeology);
+  if (isAligned) {
+    return 1; // Gain influence when your ideology's policies pass
+  }
+
+  // Check if opposed to this option
+  const isOpposed = option.opposed.some(o => o.ideology === playerIdeology);
+  if (isOpposed) {
+    return -1; // Lose influence when opposed policies pass
+  }
+
+  return 0; // No alignment effect
+}
+
+/**
  * Check if player can spend influence for an action
  */
 export function canSpendInfluence(player: Player, amount: number): boolean {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useLocalPlayer } from '@/lib/hooks/useLocalPlayer';
 
-export default function JoinGamePage() {
+function JoinGameContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { state: localPlayer, isLoaded, setDisplayName, setLastRoomId } = useLocalPlayer();
@@ -139,5 +139,17 @@ export default function JoinGamePage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function JoinGamePage() {
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="animate-pulse text-muted-foreground">Loading...</div>
+      </div>
+    }>
+      <JoinGameContent />
+    </Suspense>
   );
 }

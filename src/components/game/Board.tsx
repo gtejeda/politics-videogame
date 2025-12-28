@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
+import { AnimatePresence } from 'framer-motion';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { NationTrack } from './NationTrack';
 import { PlayerTrack } from './PlayerTrack';
@@ -9,7 +10,8 @@ import { DecisionCard } from './DecisionCard';
 import { VotingPanel } from './VotingPanel';
 import { DiceRoll } from './DiceRoll';
 import { Timer } from './Timer';
-import type { RoomStatePayload } from '@/lib/game/events';
+import { TurnResults } from './TurnResults';
+import type { RoomStatePayload, TurnResultsDisplayMessage } from '@/lib/game/events';
 import type { GameActions } from '@/lib/hooks/useGameState';
 import { IDEOLOGY_DEFINITIONS } from '@/lib/game/ideologies';
 
@@ -17,9 +19,19 @@ interface BoardProps {
   roomState: RoomStatePayload;
   localPlayerId: string | null;
   gameActions: GameActions;
+  turnResultsData: TurnResultsDisplayMessage | null;
+  hasAcknowledgedResults: boolean;
+  afkPlayers?: Set<string>;
 }
 
-export function Board({ roomState, localPlayerId, gameActions }: BoardProps) {
+export function Board({
+  roomState,
+  localPlayerId,
+  gameActions,
+  turnResultsData,
+  hasAcknowledgedResults,
+  afkPlayers = new Set(),
+}: BoardProps) {
   const {
     phase,
     currentTurn,
@@ -56,6 +68,10 @@ export function Board({ roomState, localPlayerId, gameActions }: BoardProps) {
         return 'Revealing Votes...';
       case 'resolving':
         return 'Resolving Turn...';
+      case 'showingResults':
+        return 'Turn Results';
+      case 'crisis':
+        return 'Crisis Event!';
       default:
         return '';
     }
@@ -114,6 +130,7 @@ export function Board({ roomState, localPlayerId, gameActions }: BoardProps) {
                   isActive={player.id === activePlayerId}
                   isLocal={player.id === localPlayerId}
                   pathLength={settings.pathLength}
+                  isAfk={afkPlayers.has(player.id)}
                 />
               ))}
             </CardContent>
@@ -173,6 +190,19 @@ export function Board({ roomState, localPlayerId, gameActions }: BoardProps) {
           </div>
         </div>
       </div>
+
+      {/* Turn Results Full-Screen Overlay */}
+      <AnimatePresence>
+        {turnResultsData && (
+          <TurnResults
+            results={turnResultsData}
+            players={players}
+            localPlayerId={localPlayerId}
+            onAcknowledge={gameActions.acknowledgeTurnResults}
+            hasAcknowledged={hasAcknowledgedResults}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -24,7 +24,9 @@ export type GamePhase =
   | 'proposing'
   | 'voting'
   | 'revealing'
-  | 'resolving';
+  | 'resolving'
+  | 'showingResults'
+  | 'crisis';
 
 export type VoteChoice = 'yes' | 'no' | 'abstain';
 
@@ -102,6 +104,11 @@ export interface DecisionCard {
   description: string;
   options: CardOption[];
   historicalNote: string | null;
+  /**
+   * Optional array of ideology perspectives for the "More Information" popup (FR-017).
+   * When provided, shows how each of the 5 ideologies typically approaches this type of decision.
+   */
+  ideologyPerspectives?: IdeologyPerspective[];
 }
 
 export interface Vote {
@@ -204,4 +211,21 @@ export interface CollapseDebrief {
     decision: string;
     impact: string;
   }>;
+}
+
+// ============================================
+// Ideology Perspectives (FR-017 More Information)
+// ============================================
+
+/**
+ * Represents how a specific ideology typically approaches a decision type.
+ * Used in the "More Information" popup to educate players about real-world
+ * political perspectives.
+ */
+export type LikelyVote = 'Yes' | 'No' | 'Split';
+
+export interface IdeologyPerspective {
+  ideology: Ideology;
+  typicalStance: string; // 1-2 sentences explaining this ideology's typical approach
+  likelyVote: LikelyVote;
 }

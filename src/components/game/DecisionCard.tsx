@@ -1,11 +1,23 @@
 'use client';
 
+import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
 import type { DecisionCardPayload, CardOptionPayload } from '@/lib/game/events';
-import type { Ideology, CardOptionId } from '@/lib/game/types';
+import type { Ideology, CardOptionId, GamePhase } from '@/lib/game/types';
 import { IDEOLOGY_DEFINITIONS } from '@/lib/game/ideologies';
+import { MoreInfoPopup } from './MoreInfoPopup';
 
 interface DecisionCardProps {
   card: DecisionCardPayload;
@@ -13,6 +25,8 @@ interface DecisionCardProps {
   canPropose: boolean;
   localPlayerIdeology: Ideology | null;
   onPropose: (optionId: CardOptionId) => void;
+  /** Current game phase - More Info button is visible during deliberating and voting */
+  gamePhase?: GamePhase;
 }
 
 export function DecisionCard({
@@ -21,8 +35,83 @@ export function DecisionCard({
   canPropose,
   localPlayerIdeology,
   onPropose,
+  gamePhase,
 }: DecisionCardProps) {
+  const [confirmingOption, setConfirmingOption] = useState<CardOptionPayload | null>(null);
+  const [showMoreInfo, setShowMoreInfo] = useState(false);
+
+  // More Info button is available during deliberation and voting phases (FR-017)
+  const canShowMoreInfo =
+    gamePhase === 'deliberating' ||
+    gamePhase === 'voting' ||
+    gamePhase === 'proposing';
+
+  const hasIdeologyPerspectives =
+    card.ideologyPerspectives && card.ideologyPerspectives.length > 0;
+
+  const handleConfirmPropose = () => {
+    if (confirmingOption) {
+      onPropose(confirmingOption.id);
+      setConfirmingOption(null);
+    }
+  };
+
   return (
+    <>
+      {/* More Information Popup (FR-017) */}
+      {hasIdeologyPerspectives && (
+        <MoreInfoPopup
+          isOpen={showMoreInfo}
+          onClose={() => setShowMoreInfo(false)}
+          cardTitle={card.title}
+          cardDescription={card.description}
+          perspectives={card.ideologyPerspectives!}
+          historicalNote={card.historicalNote}
+        />
+      )}
+
+      {/* Confirmation Dialog */}
+      <AlertDialog open={!!confirmingOption} onOpenChange={(open) => !open && setConfirmingOption(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm Proposal</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to propose <strong>Option {confirmingOption?.id}: {confirmingOption?.name}</strong>?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {confirmingOption && (
+            <div className="my-4 rounded-lg border p-3 text-sm">
+              <div className="flex justify-center gap-6">
+                <div className="text-center">
+                  <span className="text-xs text-muted-foreground">Budget</span>
+                  <div className={cn(
+                    'font-bold',
+                    confirmingOption.budgetChange > 0 && 'text-green-600',
+                    confirmingOption.budgetChange < 0 && 'text-red-600',
+                  )}>
+                    {confirmingOption.budgetChange > 0 ? '+' : ''}{confirmingOption.budgetChange}
+                  </div>
+                </div>
+                <div className="text-center">
+                  <span className="text-xs text-muted-foreground">Stability</span>
+                  <div className={cn(
+                    'font-bold',
+                    confirmingOption.stabilityChange > 0 && 'text-green-600',
+                    confirmingOption.stabilityChange < 0 && 'text-red-600',
+                  )}>
+                    {confirmingOption.stabilityChange > 0 ? '+' : ''}{confirmingOption.stabilityChange}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmPropose}>Propose</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
@@ -32,9 +121,35 @@ export function DecisionCard({
               {card.category.charAt(0).toUpperCase() + card.category.slice(1)} Issue
             </CardDescription>
           </div>
-          <span className="rounded bg-muted px-2 py-1 text-xs text-muted-foreground">
-            {card.zone.replace(/([A-Z])/g, ' $1').trim()}
-          </span>
+          <div className="flex items-center gap-2">
+            {/* More Info Button (FR-017) - visible during deliberation/voting phases */}
+            {canShowMoreInfo && hasIdeologyPerspectives && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowMoreInfo(true)}
+                className="text-xs"
+              >
+                <svg
+                  className="mr-1 h-3 w-3"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+                More Info
+              </Button>
+            )}
+            <span className="rounded bg-muted px-2 py-1 text-xs text-muted-foreground">
+              {card.zone.replace(/([A-Z])/g, ' $1').trim()}
+            </span>
+          </div>
         </div>
         <p className="mt-2 text-sm">{card.description}</p>
       </CardHeader>
@@ -49,7 +164,7 @@ export function DecisionCard({
               isSelected={selectedOption === option.id}
               canSelect={canPropose && !selectedOption}
               localPlayerIdeology={localPlayerIdeology}
-              onSelect={() => onPropose(option.id)}
+              onSelect={() => setConfirmingOption(option)}
             />
           ))}
         </div>
@@ -63,6 +178,7 @@ export function DecisionCard({
         )}
       </CardContent>
     </Card>
+    </>
   );
 }
 
@@ -130,30 +246,39 @@ function OptionCard({
         )}
       </div>
 
-      {/* Effects */}
-      <div className="mt-3 grid grid-cols-2 gap-4">
+      {/* Effects - Enhanced Tradeoff Display */}
+      <div className="mt-3 flex items-center justify-center gap-6 rounded-lg bg-muted/30 py-2">
         {/* Budget Change */}
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Budget:</span>
-          <span className={cn(
-            'font-medium',
-            option.budgetChange > 0 && 'text-green-600',
-            option.budgetChange < 0 && 'text-red-600',
+        <div className="flex flex-col items-center">
+          <span className="text-xs uppercase text-muted-foreground">Budget</span>
+          <div className={cn(
+            'mt-1 flex h-10 w-14 items-center justify-center rounded-lg text-lg font-bold',
+            option.budgetChange > 0 && 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300',
+            option.budgetChange < 0 && 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300',
+            option.budgetChange === 0 && 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
           )}>
             {option.budgetChange > 0 ? '+' : ''}{option.budgetChange}
-          </span>
+          </div>
+        </div>
+
+        {/* Tradeoff Arrow */}
+        <div className="text-muted-foreground">
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+          </svg>
         </div>
 
         {/* Stability Change */}
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Stability:</span>
-          <span className={cn(
-            'font-medium',
-            option.stabilityChange > 0 && 'text-green-600',
-            option.stabilityChange < 0 && 'text-red-600',
+        <div className="flex flex-col items-center">
+          <span className="text-xs uppercase text-muted-foreground">Stability</span>
+          <div className={cn(
+            'mt-1 flex h-10 w-14 items-center justify-center rounded-lg text-lg font-bold',
+            option.stabilityChange > 0 && 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300',
+            option.stabilityChange < 0 && 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300',
+            option.stabilityChange === 0 && 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
           )}>
             {option.stabilityChange > 0 ? '+' : ''}{option.stabilityChange}
-          </span>
+          </div>
         </div>
       </div>
 

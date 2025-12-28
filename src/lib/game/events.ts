@@ -16,6 +16,7 @@ import type {
   GameSettings,
   PoliticalConceptSummary,
   CollapseDebrief,
+  LikelyVote,
 } from './types';
 
 // ============================================
@@ -81,6 +82,18 @@ export interface ChatMessage {
   text: string;
 }
 
+export interface ContributeToCrisisMessage {
+  type: 'contributeToCrisis';
+  playerId: string;
+  amount: number;
+}
+
+export interface AcknowledgeTurnResultsMessage {
+  type: 'acknowledgeTurnResults';
+  playerId: string;
+  turnNumber: number;
+}
+
 export type ClientMessage =
   | JoinRoomMessage
   | SelectIdeologyMessage
@@ -91,7 +104,9 @@ export type ClientMessage =
   | GiveTokenMessage
   | SpendInfluenceMessage
   | LeaveRoomMessage
-  | ChatMessage;
+  | ChatMessage
+  | ContributeToCrisisMessage
+  | AcknowledgeTurnResultsMessage;
 
 // ============================================
 // Server → Client Messages
@@ -246,6 +261,110 @@ export interface ErrorMessage {
   message: string;
 }
 
+// Crisis-related server messages
+export interface CrisisTriggeredMessage {
+  type: 'crisisTriggered';
+  crisis: CrisisPayload;
+  turnsRemaining: number;
+}
+
+export interface CrisisContributionMessage {
+  type: 'crisisContribution';
+  playerId: string;
+  amount: number;
+  totalContribution: number;
+  contributionThreshold: number;
+}
+
+export interface CrisisResolvedMessage {
+  type: 'crisisResolved';
+  crisisId: string;
+  crisisName: string;
+  outcome: 'success' | 'failure';
+  message: string;
+  nationChanges: {
+    budgetChange: number;
+    stabilityChange: number;
+    newBudget: number;
+    newStability: number;
+  };
+  contributions: Array<{
+    playerId: string;
+    amount: number;
+  }>;
+}
+
+// AFK-related messages
+export interface PlayerAfkMessage {
+  type: 'playerAfk';
+  playerId: string;
+  playerName: string;
+  influenceLost: number;
+  newInfluence: number;
+  turnSkipped: boolean;
+}
+
+export interface PlayerActiveMessage {
+  type: 'playerActive';
+  playerId: string;
+}
+
+// Turn Results acknowledgment messages
+export interface TurnResultsDisplayMessage {
+  type: 'turnResultsDisplay';
+  turnNumber: number;
+  votePassed: boolean;
+  voteResults: {
+    yesVotes: number;
+    noVotes: number;
+    abstainCount: number;
+    votes: Array<{
+      playerId: string;
+      playerName: string;
+      choice: VoteChoice;
+      weight: number;
+    }>;
+  };
+  nationChanges: {
+    budgetChange: number;
+    stabilityChange: number;
+    newBudget: number;
+    newStability: number;
+  };
+  playerEffects: Array<{
+    playerId: string;
+    playerName: string;
+    movementBreakdown: {
+      diceRoll: number | null;
+      ideologyBonus: number;
+      ideologyPenalty: number;
+      nationModifier: number;
+      influenceModifier: number;
+      total: number;
+    };
+    influenceChange: number;
+    influenceReason: string | null;
+    tokenEffects: Array<{
+      tokenId: string;
+      effect: 'honored' | 'broken';
+      otherPlayerId: string;
+    }>;
+  }>;
+  pendingAcknowledgments: string[]; // Player IDs who haven't acknowledged yet
+  timeoutAt: number; // Timestamp when auto-acknowledge will trigger
+}
+
+export interface TurnResultsAcknowledgedMessage {
+  type: 'turnResultsAcknowledged';
+  playerId: string;
+  pendingAcknowledgments: string[]; // Remaining players who haven't acknowledged
+}
+
+export interface TurnResultsCompleteMessage {
+  type: 'turnResultsComplete';
+  turnNumber: number;
+}
+
 export type ServerMessage =
   | RoomStateSyncMessage
   | PlayerJoinedMessage
@@ -261,11 +380,19 @@ export type ServerMessage =
   | PlayerVotedMessage
   | VotesRevealedMessage
   | TurnResolvedMessage
+  | TurnResultsDisplayMessage
+  | TurnResultsAcknowledgedMessage
+  | TurnResultsCompleteMessage
   | TokenGivenMessage
   | DealResolvedMessage
   | GameEndedVictoryMessage
   | GameEndedCollapseMessage
   | ChatBroadcastMessage
+  | CrisisTriggeredMessage
+  | CrisisContributionMessage
+  | CrisisResolvedMessage
+  | PlayerAfkMessage
+  | PlayerActiveMessage
   | ErrorMessage;
 
 // ============================================
@@ -295,6 +422,12 @@ export interface NationStatePayload {
   budget: number;
 }
 
+export interface IdeologyPerspectivePayload {
+  ideology: Ideology;
+  typicalStance: string;
+  likelyVote: LikelyVote;
+}
+
 export interface DecisionCardPayload {
   id: string;
   zone: Zone;
@@ -303,6 +436,7 @@ export interface DecisionCardPayload {
   description: string;
   options: CardOptionPayload[];
   historicalNote: string | null;
+  ideologyPerspectives?: IdeologyPerspectivePayload[];
 }
 
 export interface CardOptionPayload {
@@ -312,6 +446,26 @@ export interface CardOptionPayload {
   stabilityChange: number;
   aligned: Array<{ ideology: Ideology; movement: number }>;
   opposed: Array<{ ideology: Ideology; movement: number }>;
+}
+
+export interface CrisisPayload {
+  id: string;
+  name: string;
+  description: string;
+  severity: 'minor' | 'moderate' | 'severe';
+  contributionThreshold: number;
+  maxContributionPerPlayer: number;
+  historicalNote: string | null;
+  ideologyBonuses?: Array<{
+    ideology: Ideology;
+    contributionBonus: number;
+  }>;
+}
+
+export interface ActiveCrisisPayload {
+  crisis: CrisisPayload;
+  contributions: Record<string, number>; // playerId -> contribution amount
+  turnsRemaining: number;
 }
 
 export interface RoomStatePayload {
@@ -329,4 +483,12 @@ export interface RoomStatePayload {
   tokens: TokenStatePayload[];
   nation: NationStatePayload;
   settings: GameSettings;
+  // Crisis state
+  activeCrisis: ActiveCrisisPayload | null;
+  // Turn Results acknowledgment state
+  pendingAcknowledgments: string[]; // Player IDs who haven't acknowledged yet
+  resultsTimeoutAt: number | null;
+  // Collapse/end game info (only set when status is 'collapsed' or 'finished')
+  collapseReason?: 'stability' | 'budget';
+  debrief?: CollapseDebrief;
 }

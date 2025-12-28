@@ -96,25 +96,25 @@ Navigate to `http://localhost:3000` and follow the same steps as above.
 
 ```
 politics-videogame/
-├── app/                    # Next.js App Router pages
-│   ├── (game)/
-│   │   ├── page.tsx        # Landing page
-│   │   ├── create/         # Create room flow
-│   │   ├── join/           # Join room flow
-│   │   └── room/[roomId]/  # Active game
-├── components/
-│   ├── ui/                 # shadcn/ui components
-│   ├── game/               # Game-specific components
-│   └── animations/         # Framer Motion components
-├── lib/
-│   ├── game/               # Shared game logic
-│   │   ├── state-machine.ts
-│   │   ├── rules.ts
-│   │   └── cards/          # Decision card data
-│   ├── party/              # PartyKit server logic
-│   └── hooks/              # React hooks
+├── src/
+│   ├── app/                    # Next.js App Router pages
+│   │   ├── page.tsx            # Landing page
+│   │   ├── create/             # Create room flow
+│   │   ├── join/               # Join room flow
+│   │   └── room/[roomId]/      # Active game
+│   ├── components/
+│   │   ├── ui/                 # shadcn/ui components
+│   │   ├── game/               # Game-specific components
+│   │   └── animations/         # Framer Motion components
+│   └── lib/
+│       ├── game/               # Shared game logic
+│       │   ├── state-machine.ts
+│       │   ├── rules.ts
+│       │   └── cards/          # Decision card data
+│       ├── party/              # PartyKit server logic
+│       └── hooks/              # React hooks
 ├── party/
-│   └── index.ts            # PartyKit entry point
+│   └── index.ts                # PartyKit entry point
 └── tests/
     ├── unit/
     ├── integration/
@@ -125,12 +125,12 @@ politics-videogame/
 
 | File | Purpose |
 |------|---------|
-| `lib/game/state-machine.ts` | XState definition of game flow |
-| `lib/game/rules.ts` | Movement, voting, collapse calculations |
+| `src/lib/game/state-machine.ts` | XState definition of game flow |
+| `src/lib/game/rules.ts` | Movement, voting, collapse calculations |
 | `party/index.ts` | PartyKit WebSocket message handling |
-| `lib/game/cards/*.ts` | Decision card content |
-| `components/game/Board.tsx` | Path visualization |
-| `components/game/VotingPanel.tsx` | Vote casting UI |
+| `src/lib/game/cards/*.ts` | Decision card content |
+| `src/components/game/Board.tsx` | Path visualization |
+| `src/components/game/VotingPanel.tsx` | Vote casting UI |
 
 ## Running Tests
 
@@ -138,40 +138,39 @@ politics-videogame/
 # Unit tests (fast, isolated)
 npm run test:unit
 
-# Integration tests (game flow)
-npm run test:integration
-
-# E2E tests (full browser simulation)
-npm run test:e2e
+# Watch mode for development
+npm run test:watch
 
 # All tests
 npm test
 ```
 
+> **Note**: Integration and E2E tests will be added in future iterations.
+
 ## Common Development Tasks
 
 ### Add a New Decision Card
 
-1. Open `lib/game/cards/<zone>.ts`
+1. Open `src/lib/game/cards/<zone>.ts`
 2. Add a new card object following the `DecisionCard` type
 3. Ensure tradeoffs: every option has Budget/Stability cost AND ideology alignments
 4. Add historical note for educational value
 
 ### Modify Game Rules
 
-1. Rules logic lives in `lib/game/rules.ts`
-2. State transitions in `lib/game/state-machine.ts`
+1. Rules logic lives in `src/lib/game/rules.ts`
+2. State transitions in `src/lib/game/state-machine.ts`
 3. Run unit tests after changes: `npm run test:unit`
 
 ### Add a New Animation
 
-1. Create component in `components/animations/`
+1. Create component in `src/components/animations/`
 2. Use Framer Motion's `motion.div`, `AnimatePresence`
 3. Import and use in game components
 
 ### Debug State Machine
 
-1. XState has a visualizer: `npx xstate viz lib/game/state-machine.ts`
+1. XState has a visualizer: `npx xstate viz src/lib/game/state-machine.ts`
 2. Console logs in PartyKit: check terminal running `npx partykit dev`
 3. React DevTools: XState state is visible in React state
 
