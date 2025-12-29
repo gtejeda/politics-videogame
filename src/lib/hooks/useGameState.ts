@@ -41,6 +41,7 @@ export interface GameActions {
   sendChat: (text: string) => void;
   leaveRoom: () => void;
   acknowledgeTurnResults: () => void;
+  markReadyToNegotiate: () => void; // FR-019
 }
 
 // ============================================
@@ -194,8 +195,58 @@ export function useGameState(roomId: string): [GameState, GameActions] {
             ...prev,
             roomState: {
               ...prev.roomState,
-              phase: 'deliberating',
+              phase: 'reviewing', // FR-019: Start in Review Phase
+              subPhase: 'reviewPhase',
               currentCard: message.card,
+              readyToNegotiate: [], // Reset ready set
+            },
+          };
+        });
+        break;
+
+      // FR-019: Player marked ready to negotiate
+      case 'playerReadyToNegotiate':
+        setState(prev => {
+          if (!prev.roomState) return prev;
+          return {
+            ...prev,
+            roomState: {
+              ...prev.roomState,
+              readyToNegotiate: message.readyPlayers,
+            },
+          };
+        });
+        break;
+
+      // FR-019: Negotiation phase started
+      case 'negotiationPhaseStarted':
+        setState(prev => {
+          if (!prev.roomState) return prev;
+          return {
+            ...prev,
+            roomState: {
+              ...prev.roomState,
+              phase: 'deliberating',
+              subPhase: 'negotiationPhase',
+              timerStartedAt: message.timerStartedAt,
+              recommendedDuration: message.recommendedDuration,
+              timerEndAt: message.timerStartedAt + (message.recommendedDuration * 1000),
+            },
+          };
+        });
+        break;
+
+      // FR-019: Review phase started
+      case 'reviewPhaseStarted':
+        setState(prev => {
+          if (!prev.roomState) return prev;
+          return {
+            ...prev,
+            roomState: {
+              ...prev.roomState,
+              phase: 'reviewing',
+              subPhase: 'reviewPhase',
+              readyToNegotiate: [],
             },
           };
         });
@@ -520,6 +571,14 @@ export function useGameState(roomId: string): [GameState, GameActions] {
       // Optimistically mark as acknowledged
       setState(prev => ({ ...prev, hasAcknowledgedResults: true }));
     }, [sendMessage, state.roomState?.currentTurn]),
+
+    markReadyToNegotiate: useCallback(() => {
+      if (!localPlayerIdRef.current) return;
+      sendMessage({
+        type: 'readyToNegotiate',
+        playerId: localPlayerIdRef.current,
+      });
+    }, [sendMessage]),
   };
 
   return [state, actions];

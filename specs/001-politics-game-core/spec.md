@@ -125,6 +125,43 @@ Players race to reach the End of the political path first while maintaining suff
 - **FR-017**: Each proposed policy/event MUST have a "More Information" popup accessible to all players showing: (1) a brief comparison of how each of the 5 ideologies typically approaches this type of decision, (2) historical context or real-world parallels where applicable; this popup is optional—players can vote without viewing it
   - *Availability*: Popup is accessible during the deliberation phase (3-minute timer) AND during the voting phase; not available during other game phases
   - *Content Format*: 5-row comparison table with columns: Ideology, Typical Stance (1-2 sentences), Likely Vote (Yes/No/Split); historical context appears below the table when available
+- **FR-018**: Player advancement effects on policy/event cards MUST be hidden (displayed on card back) during deliberation and voting phases; advancement is revealed collectively to all players only AFTER all votes have been cast and before results processing begins
+  - *Purpose*: Forces players to prioritize nation benefit and role-play their ideology rather than optimizing personal advancement
+  - *Card Display*: Front shows policy name, nation effects, tradeoffs; back shows per-ideology advancement bonuses/penalties
+- **FR-019**: Voting workflow MUST follow a two-phase structure with differentiated player views:
+  - *Phase 1 - Review Phase*:
+    - **Non-proposing players** see: Informational context, historical data, and ideology comparison table (educational content only, no vote options visible)
+    - **Proposing player** sees: Tabbed interface with Tab 1 containing same informational content, Tab 2 containing vote proposal options
+    - Non-proposing players mark "Ready to Negotiate" button when they understand the issue
+    - Proposing player selects their vote proposal (automatically marks them as ready)
+  - *Phase 2 - Deliberation Phase*:
+    - Begins ONLY when ALL players are ready (all non-proposers marked ready + proposer has selected proposal)
+    - Full-screen 3-minute countdown timer displayed to all players
+    - VOTE button (Yes/No/Abstain) available to all players
+    - Players negotiate verbally during this phase
+  - *Transition*: Phase 1 has no time limit; Phase 2 timer is guidance only (see FR-021)
+- **FR-020**: System MUST support tracked deals during Deliberation Phase:
+  - *Make Deal Button*: Available during Phase 2 (Deliberation); opens modal for two players to formalize an agreement
+  - *Deal Structure*: Each deal specifies: (1) parties involved, (2) agreed terms (e.g., "Player A votes Yes, Player B transfers 1 Support Token"), (3) turn scope (this vote only, or extended duration)
+  - *Visibility*: Active deals are visible to ALL players (transparency creates social accountability)
+  - *Deal Breach Detection*: System automatically detects when a player's vote contradicts their deal commitment
+  - *Breach Penalty*: Player who breaks a deal loses 2 Influence; other party gains 1 Influence; breach is publicly announced
+  - *Deal Log*: All deals (active, fulfilled, broken) are recorded in game history for post-game review
+- **FR-021**: Timers MUST serve as guidance only and NEVER auto-advance or penalize players:
+  - *Countdown Phase*: Timer displays recommended time (e.g., 3 minutes for Deliberation)
+  - *Overtime Phase*: When timer reaches 0, it transitions to "overtime" mode with visual indicator (flashing/pulsing border, color change)
+  - *No Auto-Advance*: Turn/phase NEVER advances automatically due to timer expiration
+  - *Player-Driven Progression*: Phase advances ONLY when all players explicitly indicate readiness (click "Ready", cast vote, or acknowledge results)
+  - *Purpose*: Respects player discussions and negotiations while providing time awareness
+- **FR-022**: System MUST display persistent phase indicators and player readiness status:
+  - *Phase Header Bar*: Always-visible top bar showing: (1) Current phase name (e.g., "Review Phase", "Deliberation Phase", "Voting"), (2) Brief phase description/instruction, (3) Timer with countdown and overtime indicator
+  - *Player Status Row*: Player avatars/icons displayed with real-time status indicators:
+    - Checkmark icon: Player is ready/has completed their action
+    - Hourglass icon: Player is waiting (has not yet acted)
+    - Ellipsis icon: Player is currently acting (e.g., in Deal modal, reviewing tabs)
+  - *Hover Tooltips*: Hovering over a waiting player shows contextual message (e.g., "Waiting for [Player] to mark Ready to Negotiate", "Waiting for [Player] to cast vote")
+  - *Nudge Support*: Visual emphasis on players who haven't acted when timer enters overtime (gentle pulse on their avatar)
+- **FR-023**: System MUST automatically cleanup inactive game rooms after 2 hours of no player activity to prevent resource exhaustion; cleanup removes all room state and disconnects any remaining connections
 
 ### Key Entities
 
@@ -135,11 +172,12 @@ Players race to reach the End of the political path first while maintaining suff
 - **Resource**: A measurable game value (Budget, Stability, Influence) that policies and events modify; future expansions may add Growth, Legitimacy, or other resource types
 - **Crisis**: A shared challenge event requiring coordinated player response with collective success/failure outcomes
 - **Alliance**: A temporary agreement between players with negotiated terms and reputation stakes
+- **Deal**: A formalized, tracked agreement between two players made during Deliberation Phase; has defined terms, turn scope, and automatic breach detection with penalties. Deals are session-scoped: if a player disconnects and reconnects within the 30-second window, their active deals remain intact; if they fail to reconnect, their deals are voided without penalty.
 - **Victory Condition**: A measurable goal that, when achieved, results in player victory; multiple types exist
 
 ### Assumptions
 
-- Players have stable internet connections suitable for real-time multiplayer gaming
+- Players have stable internet connections (minimum 1 Mbps bandwidth, <300ms round-trip latency) suitable for real-time multiplayer gaming
 - Games have a defined start and end (not infinite sandbox)
 - The target audience is interested in learning about politics (educational intent is welcomed, not hidden)
 - Player count of 3-5 is suitable for meaningful coopetition dynamics (minimum 3 for coalition formation, maximum 5 for manageable deliberation)
@@ -161,6 +199,14 @@ Players race to reach the End of the political path first while maintaining suff
 - **SC-010**: Player session completion rate exceeds 75% (players finish games they start)
 
 ## Clarifications
+
+### Session 2025-12-28
+
+- Q: When should player advancement (on card backs) be revealed after voting? → A: Collective reveal after ALL players have voted, before results processing
+- Q: How should the voting workflow differentiate proposing vs. non-proposing players? → A: Two-phase workflow: (1) Review Phase - non-proposing players see informational/historical context + ideology comparison only, proposing player sees same info in Tab 1 + vote options in Tab 2; non-proposers mark "Ready to Negotiate" when understood, proposer selects proposal to become ready; (2) Deliberation Phase begins when ALL ready
+- Q: How should deals be tracked during deliberation? → A: Tracked deals - "Make Deal" button opens modal where 2 players agree to terms; deal is logged and visible to all; breaking deal triggers penalty
+- Q: How should timers behave to avoid interrupting player discussions? → A: Grace period - Timer counts down as guidance, then flashes/pulses as "overtime" indicator; turn advances ONLY when all players click "Ready" or cast vote (never auto-advances)
+- Q: How should phase indicators and player readiness be displayed? → A: Header bar + player status - Persistent top bar with phase name/description/timer PLUS player avatars with status icons (checkmark=ready, hourglass=waiting, ellipsis=acting); hover shows "Waiting for [Player] to..."
 
 ### Session 2025-12-27
 

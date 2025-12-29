@@ -11,6 +11,9 @@ import { VotingPanel } from './VotingPanel';
 import { DiceRoll } from './DiceRoll';
 import { Timer } from './Timer';
 import { TurnResults } from './TurnResults';
+import { ReviewPhase } from './ReviewPhase';
+import { ProposerView } from './ProposerView';
+import { DeliberationTimer } from './DeliberationTimer';
 import type { RoomStatePayload, TurnResultsDisplayMessage } from '@/lib/game/events';
 import type { GameActions } from '@/lib/hooks/useGameState';
 import { IDEOLOGY_DEFINITIONS } from '@/lib/game/ideologies';
@@ -49,6 +52,12 @@ export function Board({
   const activePlayer = players.find(p => p.id === activePlayerId);
   const localPlayer = players.find(p => p.id === localPlayerId);
 
+  // FR-019: Get ready/waiting counts for two-phase voting
+  const readyToNegotiate = roomState.readyToNegotiate || [];
+  const readyPlayerCount = readyToNegotiate.length;
+  const totalPlayerCount = players.length;
+  const isLocalPlayerReady = localPlayerId ? readyToNegotiate.includes(localPlayerId) : false;
+
   // Get phase display text
   const phaseText = useMemo(() => {
     switch (phase) {
@@ -58,8 +67,10 @@ export function Board({
         return 'Rolling...';
       case 'drawing':
         return 'Drawing Card...';
+      case 'reviewing':
+        return isMyTurn ? 'Review & Select Option' : 'Review Phase';
       case 'deliberating':
-        return 'Deliberation Phase';
+        return 'Negotiation Phase';
       case 'proposing':
         return 'Choosing Proposal...';
       case 'voting':
@@ -86,10 +97,21 @@ export function Board({
             <h1 className="text-xl font-bold">Turn {currentTurn}</h1>
             <p className="text-sm text-muted-foreground">{phaseText}</p>
           </div>
-          {timerEndAt && phase === 'deliberating' && (
+          {/* FR-021: Show timer during deliberation phase */}
+          {timerEndAt && phase === 'deliberating' && !roomState.timerStartedAt && (
             <Timer endAt={timerEndAt} />
           )}
         </div>
+
+        {/* FR-021: Full Deliberation Timer during Negotiation Phase */}
+        {phase === 'deliberating' && roomState.timerStartedAt && roomState.recommendedDuration && (
+          <DeliberationTimer
+            timerStartedAt={roomState.timerStartedAt}
+            recommendedDuration={roomState.recommendedDuration}
+            canPropose={isMyTurn && !currentProposal}
+            hasProposed={!!currentProposal}
+          />
+        )}
 
         {/* Nation State */}
         <Card>
@@ -151,14 +173,38 @@ export function Board({
               </div>
             )}
 
-            {/* Decision Card */}
-            {currentCard && (
+            {/* FR-019: Review Phase - Proposer View */}
+            {phase === 'reviewing' && currentCard && isMyTurn && (
+              <ProposerView
+                card={currentCard}
+                localPlayerIdeology={localPlayer?.ideology || null}
+                selectedOption={currentProposal}
+                onPropose={gameActions.proposeOption}
+                readyPlayerCount={readyPlayerCount}
+                totalPlayerCount={totalPlayerCount}
+              />
+            )}
+
+            {/* FR-019: Review Phase - Non-proposer View */}
+            {phase === 'reviewing' && currentCard && !isMyTurn && (
+              <ReviewPhase
+                card={currentCard}
+                localPlayerIdeology={localPlayer?.ideology || null}
+                proposerName={activePlayer?.name || 'Player'}
+                isReady={isLocalPlayerReady}
+                onMarkReady={gameActions.markReadyToNegotiate}
+              />
+            )}
+
+            {/* Decision Card (Deliberating/Negotiation phase) */}
+            {(phase === 'deliberating' || phase === 'proposing') && currentCard && (
               <DecisionCard
                 card={currentCard}
                 selectedOption={currentProposal}
-                canPropose={isMyTurn && (phase === 'deliberating' || phase === 'proposing')}
+                canPropose={isMyTurn && !currentProposal}
                 localPlayerIdeology={localPlayer?.ideology || null}
                 onPropose={gameActions.proposeOption}
+                gamePhase={phase}
               />
             )}
 

@@ -22,11 +22,22 @@ export type GamePhase =
   | 'waiting'
   | 'rolling'
   | 'drawing'
-  | 'deliberating'
-  | 'proposing'
+  | 'reviewing'      // FR-019: Review Phase (before deliberation)
+  | 'deliberating'   // FR-019: Negotiation Phase (renamed from proposing)
   | 'voting'
   | 'revealing'
-  | 'resolving';
+  | 'resolving'
+  | 'showingResults'; // FR-015: Turn Results display
+
+// FR-019: Sub-phases for two-phase voting
+export type SubPhase = 'reviewPhase' | 'negotiationPhase';
+
+// FR-022: Player status for phase tracking
+export type PlayerStatusType = 'ready' | 'waiting' | 'acting';
+
+// FR-020: Deal types
+export type DealScope = 'this_vote' | 'next_n_turns';
+export type DealStatus = 'pending' | 'active' | 'fulfilled' | 'broken';
 
 export type VoteChoice = 'yes' | 'no' | 'abstain';
 
@@ -111,6 +122,45 @@ export interface ChatMessage {
   text: string;
 }
 
+/** FR-019: Non-proposer marks ready to negotiate */
+export interface ReadyToNegotiateMessage {
+  type: 'readyToNegotiate';
+  playerId: string;
+}
+
+/** FR-020: Player proposes a deal */
+export interface ProposeDealMessage {
+  type: 'proposeDeal';
+  playerId: string;
+  targetPlayerId: string;
+  terms: {
+    initiatorCommitment: DealCommitment;
+    responderCommitment: DealCommitment;
+  };
+  scope: DealScope;
+  scopeValue?: number;
+}
+
+/** FR-020: Player responds to a deal proposal */
+export interface RespondToDealMessage {
+  type: 'respondToDeal';
+  playerId: string;
+  dealId: string;
+  accepted: boolean;
+}
+
+/** FR-015/FR-019: Player acknowledges turn results */
+export interface AcknowledgeTurnResultsMessage {
+  type: 'acknowledgeTurnResults';
+  playerId: string;
+  turnNumber: number;
+}
+
+/** FR-020: Deal commitment type */
+export type DealCommitment =
+  | { type: 'vote'; choice: 'yes' | 'no' }
+  | { type: 'token'; action: 'give' | 'receive' };
+
 export type ClientMessage =
   | JoinRoomMessage
   | SelectIdeologyMessage
@@ -121,7 +171,11 @@ export type ClientMessage =
   | GiveTokenMessage
   | SpendInfluenceMessage
   | LeaveRoomMessage
-  | ChatMessage;
+  | ChatMessage
+  | ReadyToNegotiateMessage
+  | ProposeDealMessage
+  | RespondToDealMessage
+  | AcknowledgeTurnResultsMessage;
 
 // ============================================
 // Server → Client Messages
@@ -297,6 +351,132 @@ export interface ErrorMessage {
   message: string;
 }
 
+/** FR-019: Review phase started (after card drawn) */
+export interface ReviewPhaseStartedMessage {
+  type: 'reviewPhaseStarted';
+  proposerId: string;
+}
+
+/** FR-019: Player marked ready to negotiate */
+export interface PlayerReadyToNegotiateMessage {
+  type: 'playerReadyToNegotiate';
+  playerId: string;
+  readyPlayers: string[]; // All players who are ready
+  waitingPlayers: string[]; // Players still reviewing
+}
+
+/** FR-019: Negotiation phase started (all ready) */
+export interface NegotiationPhaseStartedMessage {
+  type: 'negotiationPhaseStarted';
+  timerStartedAt: number;
+  recommendedDuration: number; // 180 seconds
+}
+
+/** FR-018: Advancement revealed (after all votes cast) */
+export interface AdvancementRevealedMessage {
+  type: 'advancementRevealed';
+  card: DecisionCardState;
+}
+
+/** FR-020: Deal proposed */
+export interface DealProposedMessage {
+  type: 'dealProposed';
+  deal: DealState;
+}
+
+/** FR-020: Deal accepted/rejected */
+export interface DealResponseMessage {
+  type: 'dealResponse';
+  dealId: string;
+  accepted: boolean;
+  deal?: DealState; // Full deal if accepted
+}
+
+/** FR-020: Deal breach detected */
+export interface DealBreachMessage {
+  type: 'dealBreach';
+  dealId: string;
+  breakerId: string;
+  victimId: string;
+  influenceLoss: number;
+  influenceGain: number;
+}
+
+/** FR-022: Player status updated */
+export interface PlayerStatusUpdateMessage {
+  type: 'playerStatusUpdate';
+  playerId: string;
+  status: PlayerStatusType;
+  phase: GamePhase;
+  tooltip?: string; // e.g., "Waiting for [Player] to cast vote"
+}
+
+/** FR-021: Timer entered overtime */
+export interface TimerOvertimeMessage {
+  type: 'timerOvertime';
+  phase: GamePhase;
+  overtimeSeconds: number;
+  waitingPlayers: string[];
+}
+
+/** FR-015: Turn results display */
+export interface TurnResultsDisplayMessage {
+  type: 'turnResultsDisplay';
+  turnNumber: number;
+  votePassed: boolean;
+  voteResults: {
+    yesVotes: number;
+    noVotes: number;
+    abstainCount: number;
+    votes: Array<{
+      playerId: string;
+      playerName: string;
+      choice: VoteChoice;
+      weight: number;
+    }>;
+  };
+  nationChanges: {
+    budgetChange: number;
+    stabilityChange: number;
+    newBudget: number;
+    newStability: number;
+  };
+  playerEffects: Array<{
+    playerId: string;
+    playerName: string;
+    movementBreakdown: {
+      diceRoll: number | null;
+      ideologyBonus: number;
+      ideologyPenalty: number;
+      nationModifier: number;
+      influenceModifier: number;
+      total: number;
+    };
+    influenceChange: number;
+    influenceReason: string | null;
+    tokenEffects: Array<{
+      tokenId: string;
+      effect: 'honored' | 'broken';
+      otherPlayerId: string;
+    }>;
+  }>;
+  pendingAcknowledgments: string[];
+  timeoutAt: number;
+}
+
+/** FR-015: Player acknowledged turn results */
+export interface TurnResultsAcknowledgedMessage {
+  type: 'turnResultsAcknowledged';
+  playerId: string;
+  pendingAcknowledgments: string[];
+}
+
+/** FR-015: All players acknowledged, advancing */
+export interface TurnResultsCompleteMessage {
+  type: 'turnResultsComplete';
+  turnNumber: number;
+}
+
 export type ServerMessage =
   | RoomStateSyncMessage
   | PlayerJoinedMessage
@@ -317,7 +497,20 @@ export type ServerMessage =
   | GameEndedVictoryMessage
   | GameEndedCollapseMessage
   | ChatBroadcastMessage
-  | ErrorMessage;
+  | ErrorMessage
+  // New FR-018, FR-019, FR-020, FR-021, FR-022 messages
+  | ReviewPhaseStartedMessage
+  | PlayerReadyToNegotiateMessage
+  | NegotiationPhaseStartedMessage
+  | AdvancementRevealedMessage
+  | DealProposedMessage
+  | DealResponseMessage
+  | DealBreachMessage
+  | PlayerStatusUpdateMessage
+  | TimerOvertimeMessage
+  | TurnResultsDisplayMessage
+  | TurnResultsAcknowledgedMessage
+  | TurnResultsCompleteMessage;
 
 // ============================================
 // State Shapes (for sync)
@@ -365,21 +558,52 @@ export interface CardOptionState {
   opposed: Array<{ ideology: Ideology; movement: number }>;
 }
 
+/** FR-020: Deal state */
+export interface DealState {
+  id: string;
+  initiatorId: string;
+  responderId: string;
+  terms: {
+    initiatorCommitment: DealCommitment;
+    responderCommitment: DealCommitment;
+  };
+  scope: DealScope;
+  scopeValue?: number;
+  status: DealStatus;
+  createdAt: number;
+  resolvedAt?: number;
+}
+
+/** FR-022: Player status state */
+export interface PlayerStatusState {
+  playerId: string;
+  status: PlayerStatusType;
+  phase: GamePhase;
+  updatedAt: number;
+}
+
 export interface RoomState {
   id: string;
   status: RoomStatus;
   phase: GamePhase;
+  subPhase: SubPhase | null;           // FR-019: Two-phase voting
   hostPlayerId: string;
   currentTurn: number;
   activePlayerId: string | null;
   currentCard: DecisionCardState | null;
   currentProposal: CardOptionId | null;
   diceRoll: number | null;
-  timerEndAt: number | null;
+  timerStartedAt: number | null;       // FR-021: Guidance timer start
+  recommendedDuration: number | null;  // FR-021: Recommended seconds
+  showAdvancement: boolean;            // FR-018: Card advancement visible
   players: PlayerState[];
   tokens: TokenState[];
   nation: NationState;
   settings: GameSettings;
+  // FR-019, FR-020, FR-022 additions
+  readyToNegotiate: string[];          // FR-019: Player IDs ready in Review Phase
+  activeDeals: DealState[];            // FR-020: Currently active deals
+  playerStatuses: PlayerStatusState[]; // FR-022: Phase readiness per player
 }
 
 export interface GameSettings {

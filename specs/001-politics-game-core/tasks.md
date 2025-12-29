@@ -121,16 +121,24 @@ Based on plan.md structure:
 - [X] T043 [US1] Handle rollDice message in party server in lib/party/game-room.ts
 - [X] T044 [US1] Create 5 sample Decision Cards for Early Term zone in lib/game/cards/early-term.ts
 - [X] T045 [US1] Implement card drawing logic in party server in lib/party/game-room.ts
-- [N/A] T045a [US1] ~~Implement hidden hand mechanics~~ - Removed: game uses shared card model, not per-player hands
-- [N/A] T045b [US1] ~~Add hand visibility rules~~ - Removed: FR-011 satisfied by hidden votes and influence ranges instead
 - [X] T046 [US1] Create DecisionCard component showing options with tradeoffs in components/game/DecisionCard.tsx
 
-### Turn Flow - Deliberation & Proposing
+### Turn Flow - Review Phase (FR-019 Phase 1)
 
-- [X] T047 [US1] Create Timer component with 3-minute countdown in components/game/Timer.tsx
-- [X] T048 [US1] Implement deliberation timer in party server (auto-advance on timeout) in lib/party/game-room.ts
+- [X] T047 [US1] Create Timer component with countdown and overtime indicator in components/game/Timer.tsx
+- [X] T047a [US1] Create ReviewPhase component for non-proposing players showing informational content only (no vote options) in components/game/ReviewPhase.tsx
+- [X] T047b [US1] Create ProposerView component with tabbed interface: Tab 1 = informational content, Tab 2 = vote proposal options in components/game/ProposerView.tsx
+- [X] T047c [US1] Add "Ready to Negotiate" button for non-proposing players in ReviewPhase component
+- [X] T047d [US1] Handle markReady message in party server, track readiness per player in lib/party/game-room.ts
 - [X] T049 [US1] Add option proposal UI for active player in components/game/DecisionCard.tsx
-- [X] T050 [US1] Handle proposeOption message in party server in lib/party/game-room.ts
+- [X] T050 [US1] Handle proposeOption message in party server (proposer becomes ready when proposal selected) in lib/party/game-room.ts
+
+### Turn Flow - Deliberation Phase (FR-019 Phase 2)
+
+- [X] T048 [US1] Implement phase transition: Deliberation begins ONLY when all players ready (all non-proposers + proposer) in lib/party/game-room.ts
+- [X] T048a [US1] Display full-screen 3-minute countdown timer visible to all players during Deliberation in components/game/DeliberationTimer.tsx
+- [X] T048b [US1] Implement overtime mode: timer reaches 0, transitions to flashing/pulsing "overtime" indicator (NO auto-advance per FR-021) in DeliberationTimer component
+- [X] T048c [US1] Enable VOTE button (Yes/No/Abstain) for all players only during Deliberation Phase in VotingPanel
 
 ### Turn Flow - Voting & Resolution
 
@@ -210,6 +218,18 @@ Based on plan.md structure:
 - [X] T072g [P] [US2] Add ideology perspectives data to Crisis Zone cards in lib/game/cards/crisis-zone.ts
 - [X] T072h [P] [US2] Add ideology perspectives data to Late Term cards in lib/game/cards/late-term.ts
 
+### Phase Indicators & Status Bar (FR-022)
+
+- [X] T072i [US2] Create PhaseIndicator component with persistent header bar showing current phase name, description, and timer in components/game/PhaseIndicator.tsx
+- [X] T072j [P] [US2] Add PlayerStatusRow component showing player avatars with status icons (checkmark=ready, hourglass=waiting, ellipsis=acting) in components/game/PlayerStatusRow.tsx
+- [X] T072k [US2] Implement hover tooltips showing "Waiting for [Player] to..." context in PlayerStatusRow component
+- [X] T072l [US2] Add overtime nudge animation (gentle pulse) on player avatars when timer enters overtime in PhaseIndicator
+
+### Hidden Advancement Reveal (FR-018)
+
+- [X] T072m [US2] Add card-back view to DecisionCard showing per-ideology advancement bonuses (hidden during deliberation/voting) in components/game/CardBackView.tsx
+- [X] T072n [US2] Implement collective advancement reveal animation after all votes cast, before results processing in components/game/CardBackView.tsx
+
 **Checkpoint**: User Story 2 complete - full tradeoff mechanics working with educational context
 
 ---
@@ -220,6 +240,12 @@ Based on plan.md structure:
 
 **Independent Test**: Give a Support Token to another player, verify the token appears in their "held" section, then have the original owner vote against their proposal and verify influence changes.
 
+**Terminology Note:**
+- **Support Tokens**: Transferable assets representing trust/reputation. Token holders gain influence if the giver votes against their interests.
+- **Deals**: Formal logged agreements made during Deliberation Phase. May involve token transfers, vote commitments, or other terms. Breaking a deal triggers automatic penalties.
+
+Tasks T073-T078 implement Support Token mechanics. Tasks T078a-T078h implement the Deal system.
+
 ### Support Token System
 
 - [X] T073 [US3] Create DealTracker component showing tokens given/received in components/game/DealTracker.tsx
@@ -228,6 +254,17 @@ Based on plan.md structure:
 - [X] T076 [US3] Add token transfer animation (drag gesture) in DealTracker component
 - [X] T077 [US3] Implement deal resolution logic (honored/broken) on vote in lib/party/game-room.ts
 - [X] T078 [US3] Add influence change effects for broken deals (+1 holder, -1 breaker) in lib/party/game-room.ts
+
+### Tracked Deal System (FR-020)
+
+- [X] T078a [US3] Create DealModal component for formalizing agreements between two players in components/game/DealModal.tsx
+- [X] T078b [US3] Implement deal data structure (parties, terms, turn scope) in lib/game/types.ts
+- [X] T078c [US3] Handle createDeal message in party server, store active deals in room state in lib/party/game-room.ts
+- [X] T078d [US3] Display active deals visible to ALL players in DealLog component (transparency per FR-020)
+- [X] T078e [US3] Implement automatic deal breach detection when vote contradicts commitment in lib/party/game-room.ts
+- [X] T078f [US3] Apply breach penalty (-2 Influence breaker, +1 Influence other party) and broadcast breach announcement in lib/party/game-room.ts
+- [X] T078g [US3] Create DealLog component showing all deals (active, fulfilled, broken) for post-game review in components/game/DealLog.tsx
+- [X] T078h [US3] Handle deal voiding on player disconnect (no penalty if reconnect fails within 30s window) in lib/party/game-room.ts
 
 ### Influence Spending
 
@@ -319,6 +356,10 @@ Based on plan.md structure:
 - [X] T109 Run quickstart.md validation - verify all steps work
 - [X] T110 Add 5 more Decision Cards per zone (polish content)
 - [X] T111 Verify all cards have historical notes for educational value
+- [X] T111a Audit all Decision Cards to verify ≥30% have delayed effects (FR-004 compliance check)
+  - **AUDIT RESULT**: Delayed effects system not yet implemented. Current cards have only immediate effects.
+  - **RECOMMENDATION**: Add `delayedEffects` field to DecisionCard type and implement trigger system in game-room.ts.
+  - **EXAMPLE DELAYED EFFECT**: Infrastructure bill (-3 Budget) could add +1 Stability after 2 turns as delayed benefit.
 
 ---
 
@@ -390,17 +431,17 @@ Task: "Add ideology perspectives data to Late Term cards in lib/game/cards/late-
 ### Incremental Delivery
 
 1. Setup + Foundational → Foundation ready (27 tasks)
-2. + User Story 1 → Playable MVP (34 tasks)
-3. + User Story 2 → Full card system (14 tasks)
-4. + User Story 3 → Coopetition mechanics (17 tasks)
+2. + User Story 1 → Playable MVP (47 tasks)
+3. + User Story 2 → Full card system (28 tasks)
+4. + User Story 3 → Coopetition mechanics (25 tasks)
 5. + User Story 4 → Educational features (7 tasks)
 6. + User Story 5 → Complete victory conditions (5 tasks)
-7. + Polish → Production ready (10 tasks)
+7. + Polish → Production ready (11 tasks)
 
 ### Suggested MVP Scope
 
 Complete **Phase 1 + Phase 2 + Phase 3 (US1)** for minimal playable game:
-- 61 tasks total for MVP
+- 74 tasks total for MVP (8 + 19 + 47)
 - Players can: create room, join, pick ideology, play turns, see vote results, move on board
 
 ---
@@ -411,15 +452,15 @@ Complete **Phase 1 + Phase 2 + Phase 3 (US1)** for minimal playable game:
 |-------|------------|------------|----------------|
 | 1 | Setup | 8 | 7 |
 | 2 | Foundational | 19 | 10 |
-| 3 | US1 (Join & Play) | 42 | 0 (sequential flow) |
-| 4 | US2 (Tradeoffs) | 22 | 7 |
-| 5 | US3 (Coopetition) | 17 | 1 |
+| 3 | US1 (Join & Play) | 47 | 0 (sequential flow) |
+| 4 | US2 (Tradeoffs) | 28 | 8 |
+| 5 | US3 (Coopetition) | 25 | 1 |
 | 6 | US4 (Education) | 7 | 0 |
 | 7 | US5 (Victory) | 5 | 0 |
-| 8 | Polish | 10 | 6 |
-| **Total** | | **130** | **31** |
+| 8 | Polish | 11 | 6 |
+| **Total** | | **150** | **32** |
 
-*Note: T045a and T045b marked N/A (removed from scope). T056a-e and T059a-e added for Turn Results and AFK handling. T072a-h added for FR-017 More Information popup.*
+*Note: T045a/T045b removed from US1 (see Removed Tasks). T056a-e and T059a-e added for Turn Results and AFK handling. T072a-h added for FR-017 More Information popup. T072i-n added for FR-018/FR-022. T047a-d and T048a-c added for FR-019 two-phase voting. T078a-h added for FR-020 tracked deals. T111a added for FR-004 verification.*
 
 ---
 
@@ -431,3 +472,12 @@ Complete **Phase 1 + Phase 2 + Phase 3 (US1)** for minimal playable game:
 - Commit after each task or logical group
 - Stop at any checkpoint to validate story independently
 - Decision Card content (T044, T060-T062, T110) can be expanded iteratively
+
+---
+
+## Removed Tasks
+
+The following tasks were removed during design refinement:
+
+- **T045a**: Hidden hand mechanics - Removed because game uses shared card model, not per-player hands
+- **T045b**: Hand visibility rules - Removed because FR-011 is satisfied by hidden votes and influence ranges instead

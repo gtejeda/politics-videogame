@@ -2,6 +2,7 @@
 
 **Feature**: 001-politics-game-core
 **Date**: 2025-12-27
+**Updated**: 2025-12-28 (Added Deal entity, Phase tracking, Timer modes)
 
 ## Entity Relationship Overview
 
@@ -13,15 +14,15 @@
        │1                    │N
        │                     │
        ▼                     ▼
-┌─────────────┐       ┌─────────────┐
-│ NationState │       │    Vote     │
-└─────────────┘       └─────────────┘
-       │
-       │1:N
-       ▼
-┌─────────────┐
-│DecisionCard │
-└─────────────┘
+┌─────────────┐       ┌─────────────┐       ┌─────────────┐
+│ NationState │       │    Vote     │       │    Deal     │
+└─────────────┘       └─────────────┘       └─────────────┘
+       │                                          │
+       │1:N                                       │2 (parties)
+       ▼                                          ▼
+┌─────────────┐                            ┌─────────────┐
+│DecisionCard │                            │   Player    │
+└─────────────┘                            └─────────────┘
 ```
 
 ---
@@ -45,12 +46,22 @@ The root entity representing a single game session.
 | pendingVotes | Map<PlayerId, Vote> | Votes before reveal | cleared after resolve |
 | currentProposal | CardOption \| null | Selected option for voting | A, B, or C |
 | phase | GamePhase | Current turn phase | enum |
+| subPhase | SubPhase \| null | Sub-phase for two-phase voting (FR-019) | enum |
 | diceRoll | number \| null | Active player's roll | 1-6 or null |
-| timerEndAt | timestamp \| null | When deliberation ends | null outside deliberation |
+| timerStartedAt | timestamp \| null | When current phase timer started | null outside timed phases |
+| recommendedDuration | number \| null | Recommended time in seconds (FR-021) | null outside timed phases |
+| readyToNegotiate | Set\<PlayerId\> | Players who marked ready in Review Phase | cleared after voting |
+| activeDeals | Deal[] | Currently active deals (FR-020) | cleared after scope expires |
+| dealHistory | Deal[] | All deals (for post-game review) | append-only |
+| showAdvancement | boolean | Whether card advancement is revealed (FR-018) | false until all votes cast |
 
 **RoomStatus enum**: `lobby` | `playing` | `collapsed` | `finished`
 
-**GamePhase enum**: `waiting` | `rolling` | `drawing` | `deliberating` | `proposing` | `voting` | `revealing` | `resolving`
+**GamePhase enum**: `waiting` | `rolling` | `drawing` | `reviewing` | `deliberating` | `voting` | `revealing` | `resolving` | `showingResults`
+
+**SubPhase enum** (for FR-019 two-phase voting):
+- `reviewPhase`: Non-proposers reviewing info, proposer selecting option
+- `negotiationPhase`: All ready, 3-min timer, deal-making enabled
 
 **GameSettings**:
 | Field | Type | Default |
@@ -191,6 +202,72 @@ A player's vote on a decision.
 
 ---
 
+### Deal (FR-020)
+
+A formalized, tracked agreement between two players made during Deliberation Phase.
+
+| Field | Type | Description | Validation |
+|-------|------|-------------|------------|
+| id | string | Unique deal ID | auto (UUID) |
+| initiatorId | string | Player who proposed the deal | required |
+| responderId | string | Player who was offered the deal | required |
+| terms | DealTerms | What each party commits to | required |
+| scope | DealScope | When the deal applies | enum |
+| scopeValue | number \| null | Number of turns if scope is 'next_n_turns' | 1-5 |
+| status | DealStatus | Current deal state | enum |
+| createdAt | timestamp | When deal was created | auto |
+| resolvedAt | timestamp \| null | When deal was fulfilled/broken | auto |
+
+**DealScope enum**: `this_vote` | `next_n_turns`
+
+**DealStatus enum**: `pending` | `active` | `fulfilled` | `broken`
+
+**DealTerms**:
+| Field | Type | Description |
+|-------|------|-------------|
+| initiatorCommitment | DealCommitment | What initiator promises |
+| responderCommitment | DealCommitment | What responder promises |
+
+**DealCommitment**:
+```typescript
+type DealCommitment =
+  | { type: 'vote'; choice: 'yes' | 'no' }
+  | { type: 'token'; action: 'give' | 'receive' };
+```
+
+**Breach Detection Rules**:
+- After voting phase, system checks active deals scoped to `this_vote`
+- If a player's vote contradicts their commitment: deal is `broken`
+- Breach penalty: Breaker loses 2 Influence, other party gains 1 Influence
+- Breach is publicly announced to all players
+
+---
+
+### PlayerStatus (FR-022)
+
+Tracks individual player's readiness within a phase.
+
+| Field | Type | Description | Validation |
+|-------|------|-------------|------------|
+| playerId | string | Which player | required |
+| phase | GamePhase | Which phase this status applies to | current phase |
+| status | StatusType | Current activity state | enum |
+| updatedAt | timestamp | Last status change | auto |
+
+**StatusType enum**:
+- `ready`: Player has completed their action for this phase
+- `waiting`: Player has not yet acted
+- `acting`: Player is actively engaged (e.g., in Deal modal, reviewing tabs)
+
+**UI Representation**:
+| Status | Icon | Color |
+|--------|------|-------|
+| ready | ✓ checkmark | green |
+| waiting | ⏳ hourglass | gray |
+| acting | … ellipsis | amber |
+
+---
+
 ## Derived/Computed State
 
 ### PlayerMovement (computed per turn resolution)
@@ -250,19 +327,76 @@ lobby → playing → finished
        collapsed
 ```
 
-### Turn Lifecycle
+### Turn Lifecycle (Updated for FR-019 Two-Phase Voting)
 
 ```
-waiting → rolling → drawing → deliberating → proposing → voting → revealing → resolving
-    ↑                                                                              │
-    └──────────────────────────────────────────────────────────────────────────────┘
+waiting → rolling → drawing → reviewing ─────────────────┐
+    ↑                            │                       │
+    │                    [proposer selects option]       │
+    │                    [non-proposers mark ready]      │
+    │                            │                       │
+    │                            ▼                       │
+    │                      deliberating ◄────────────────┘
+    │                            │           [all ready]
+    │                    [3-min guidance timer]
+    │                    [deals can be made]
+    │                            │
+    │                            ▼
+    │                        voting
+    │                            │
+    │                    [all votes cast]
+    │                            │
+    │                            ▼
+    │                       revealing ──→ [show advancement - FR-018]
+    │                            │
+    │                            ▼
+    │                       resolving ──→ [check deal breaches - FR-020]
+    │                            │
+    │                            ▼
+    │                    showingResults
+    │                            │
+    │                    [all players acknowledge]
+    │                            │
+    └────────────────────────────┘
 ```
 
-### Deliberation Timer
+### Timer Behavior (FR-021)
 
 ```
-deliberating (180s countdown) ──[timeout]──→ proposing (force proposal or skip)
+                    ┌─────────────────────────────────────────────────┐
+                    │              GUIDANCE TIMER                     │
+                    │                                                 │
+                    │  [Countdown Phase]                              │
+                    │  "2:45 remaining"                               │
+                    │  Normal display                                 │
+                    │                                                 │
+                    │         │ timer reaches 0                       │
+                    │         ▼                                       │
+                    │                                                 │
+                    │  [Overtime Phase]                               │
+                    │  "Overtime +0:15"                               │
+                    │  Pulsing border, amber color                    │
+                    │  Waiting players' avatars pulse                 │
+                    │                                                 │
+                    │  ─── NO AUTO-ADVANCE ───                        │
+                    │  Phase advances ONLY when all players ready     │
+                    │                                                 │
+                    └─────────────────────────────────────────────────┘
 ```
+
+### Phase Sub-States (FR-019)
+
+**Review Phase (reviewPhase)**:
+- Entry: Card drawn after dice roll
+- Proposer: Sees tabbed UI (Info tab + Options tab)
+- Non-proposers: See info-only view + "Ready to Negotiate" button
+- Exit: All players ready (proposer selected option, non-proposers marked ready)
+
+**Negotiation Phase (negotiationPhase)**:
+- Entry: All players ready from Review Phase
+- All players: See Deal button, Vote button (Yes/No/Abstain)
+- Timer: 3-minute guidance timer starts
+- Exit: All players have cast votes
 
 ---
 
@@ -283,6 +417,16 @@ interface RoomState {
     lateTerm: DecisionCard[];
   };
   history: TurnHistory[]; // For post-game summary
+
+  // New fields for FR-018, FR-019, FR-020, FR-021, FR-022
+  subPhase: SubPhase | null;
+  readyToNegotiate: Set<string>;      // FR-019: Players ready in Review Phase
+  activeDeals: Deal[];                 // FR-020: Currently active deals
+  dealHistory: Deal[];                 // FR-020: All deals for post-game
+  showAdvancement: boolean;            // FR-018: Card advancement revealed
+  timerStartedAt: number | null;       // FR-021: Guidance timer start
+  recommendedDuration: number | null;  // FR-021: Recommended seconds
+  playerStatuses: Map<string, PlayerStatus>; // FR-022: Phase readiness
 }
 ```
 
@@ -308,8 +452,16 @@ interface LocalPlayerState {
 |--------|------|-------|
 | GameRoom | 3-5 players to start | "Need 3-5 players" |
 | Player | Unique ideology per room | "Ideology already taken" |
-| Vote | Can only vote during voting phase | "Not in voting phase" |
+| Vote | Can only vote during deliberating phase (negotiationPhase) | "Not in voting phase" |
 | Vote | influenceSpent <= player.influence | "Insufficient influence" |
 | SupportToken | Can only give own tokens | "Not your token" |
 | Movement | position >= 0 | Floor at 0 |
 | NationState | stability/budget within bounds | Collapse or cap |
+| Deal | Can only propose during negotiationPhase | "Not in deliberation phase" |
+| Deal | Both parties must be in same room | "Player not found" |
+| Deal | Cannot make deal with self | "Cannot make deal with yourself" |
+| Deal | Max 1 active deal per player pair per vote | "Deal already exists" |
+| ReadyToNegotiate | Can only mark ready during reviewPhase | "Not in review phase" |
+| ReadyToNegotiate | Non-proposer only | "Proposer uses option selection" |
+| ProposeOption | Can only propose during reviewPhase | "Not in review phase" |
+| ProposeOption | Active player only | "Not your turn" |

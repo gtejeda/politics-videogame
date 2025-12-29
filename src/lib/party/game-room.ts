@@ -54,7 +54,7 @@ import {
 export interface GameRoomState {
   id: string;
   status: 'lobby' | 'playing' | 'collapsed' | 'finished';
-  phase: 'waiting' | 'rolling' | 'drawing' | 'deliberating' | 'proposing' | 'voting' | 'revealing' | 'resolving' | 'showingResults' | 'crisis';
+  phase: 'waiting' | 'rolling' | 'drawing' | 'reviewing' | 'deliberating' | 'proposing' | 'voting' | 'revealing' | 'resolving' | 'showingResults' | 'crisis';
   hostPlayerId: string;
   players: Map<string, Player>;
   nation: NationState;
@@ -71,6 +71,13 @@ export interface GameRoomState {
   pendingVotes: Map<string, Vote>;
   timerEndAt: number | null;
 
+  // FR-019: Two-phase voting state
+  subPhase: 'reviewPhase' | 'negotiationPhase' | null;
+  readyToNegotiate: Set<string>; // Player IDs ready in Review Phase
+  timerStartedAt: number | null; // FR-021: Guidance timer start
+  recommendedDuration: number | null; // FR-021: Recommended seconds
+  showAdvancement: boolean; // FR-018: Card advancement visible
+
   // Turn Results acknowledgment state
   pendingAcknowledgments: Set<string>; // Player IDs who haven't acknowledged yet
   resultsTimeoutAt: number | null; // When auto-acknowledge will trigger
@@ -85,6 +92,36 @@ export interface GameRoomState {
     contributions: Map<string, number>; // playerId -> contribution amount
     turnsRemaining: number;
   } | null;
+
+  // FR-020: Tracked deals
+  activeDeals: Array<{
+    id: string;
+    initiatorId: string;
+    responderId: string;
+    terms: {
+      initiatorCommitment: { type: 'vote'; choice: 'yes' | 'no' } | { type: 'token'; action: 'give' | 'receive' };
+      responderCommitment: { type: 'vote'; choice: 'yes' | 'no' } | { type: 'token'; action: 'give' | 'receive' };
+    };
+    scope: 'this_vote' | 'next_n_turns';
+    scopeValue?: number;
+    status: 'pending' | 'active' | 'fulfilled' | 'broken';
+    createdAt: number;
+    resolvedAt?: number;
+  }>;
+  dealHistory: Array<{
+    id: string;
+    initiatorId: string;
+    responderId: string;
+    terms: {
+      initiatorCommitment: { type: 'vote'; choice: 'yes' | 'no' } | { type: 'token'; action: 'give' | 'receive' };
+      responderCommitment: { type: 'vote'; choice: 'yes' | 'no' } | { type: 'token'; action: 'give' | 'receive' };
+    };
+    scope: 'this_vote' | 'next_n_turns';
+    scopeValue?: number;
+    status: 'pending' | 'active' | 'fulfilled' | 'broken';
+    createdAt: number;
+    resolvedAt?: number;
+  }>;
 
   // History
   history: TurnHistory[];
@@ -115,11 +152,20 @@ export function createInitialRoomState(roomId: string, hostPlayerId: string): Ga
     modifiedDiceRoll: null,
     pendingVotes: new Map(),
     timerEndAt: null,
+    // FR-019: Two-phase voting
+    subPhase: null,
+    readyToNegotiate: new Set(),
+    timerStartedAt: null,
+    recommendedDuration: null,
+    showAdvancement: false,
     pendingAcknowledgments: new Set(),
     resultsTimeoutAt: null,
     playerLastActivity: new Map(),
     afkPlayers: new Set(),
     activeCrisis: null,
+    // FR-020: Tracked deals
+    activeDeals: [],
+    dealHistory: [],
     history: [],
   };
 }
@@ -350,15 +396,104 @@ export function performDiceRoll(
 // Card Drawing
 // ============================================
 
+/**
+ * Sets the current card and enters Review Phase (FR-019).
+ * During Review Phase:
+ * - Proposer can review info and select an option
+ * - Non-proposers review info and mark ready to negotiate
+ */
 export function setCurrentCard(
   state: GameRoomState,
   card: DecisionCard
 ): GameRoomState {
   return {
     ...state,
-    phase: 'deliberating',
+    phase: 'reviewing', // FR-019: Start in Review Phase
+    subPhase: 'reviewPhase',
     currentCard: card,
-    timerEndAt: Date.now() + (state.settings.deliberationSeconds * 1000),
+    readyToNegotiate: new Set(), // Reset ready set
+    showAdvancement: false, // FR-018: Hide advancement initially
+    timerEndAt: null, // No timer during review phase
+    timerStartedAt: null,
+    recommendedDuration: null,
+  };
+}
+
+// ============================================
+// FR-019: Ready to Negotiate
+// ============================================
+
+/**
+ * Marks a non-proposing player as ready to negotiate.
+ * When all players are ready (including proposer via proposal selection),
+ * transitions to Negotiation Phase.
+ */
+export function markReadyToNegotiate(
+  state: GameRoomState,
+  playerId: string
+): { state: GameRoomState; allReady: boolean } | { error: string } {
+  // Can only mark ready during review phase
+  if (state.phase !== 'reviewing' || state.subPhase !== 'reviewPhase') {
+    return { error: 'Not in review phase' };
+  }
+
+  // Proposer doesn't use this - they become ready by selecting an option
+  if (state.activePlayerId === playerId) {
+    return { error: 'Proposer should select an option instead' };
+  }
+
+  if (!state.players.has(playerId)) {
+    return { error: 'Player not in game' };
+  }
+
+  // Already ready
+  if (state.readyToNegotiate.has(playerId)) {
+    return { state, allReady: checkAllReadyForNegotiation(state) };
+  }
+
+  const newReady = new Set(state.readyToNegotiate);
+  newReady.add(playerId);
+
+  const newState = {
+    ...state,
+    readyToNegotiate: newReady,
+  };
+
+  const allReady = checkAllReadyForNegotiation(newState);
+
+  return { state: newState, allReady };
+}
+
+/**
+ * Checks if all players are ready for negotiation.
+ * All non-proposers must be ready AND proposer must have selected an option.
+ */
+function checkAllReadyForNegotiation(state: GameRoomState): boolean {
+  const nonProposers = Array.from(state.players.keys()).filter(
+    id => id !== state.activePlayerId
+  );
+
+  // All non-proposers must be ready
+  const allNonProposersReady = nonProposers.every(id => state.readyToNegotiate.has(id));
+
+  // Proposer is ready when they've selected an option
+  const proposerReady = state.currentProposal !== null;
+
+  return allNonProposersReady && proposerReady;
+}
+
+/**
+ * Transitions from Review Phase to Negotiation Phase.
+ * Called when all players are ready.
+ */
+export function enterNegotiationPhase(state: GameRoomState): GameRoomState {
+  return {
+    ...state,
+    phase: 'deliberating', // FR-019: Negotiation = deliberating phase
+    subPhase: 'negotiationPhase',
+    timerStartedAt: Date.now(),
+    recommendedDuration: state.settings.deliberationSeconds, // 180 seconds
+    timerEndAt: Date.now() + (state.settings.deliberationSeconds * 1000), // For backwards compatibility
   };
 }
 
@@ -366,12 +501,18 @@ export function setCurrentCard(
 // Option Proposal
 // ============================================
 
+/**
+ * Proposer selects an option during Review Phase.
+ * This marks them as "ready" - if all non-proposers are also ready,
+ * transitions to Negotiation Phase.
+ */
 export function proposeOption(
   state: GameRoomState,
   playerId: string,
   optionId: CardOptionId
-): GameRoomState | { error: string } {
-  if (state.phase !== 'deliberating' && state.phase !== 'proposing') {
+): { state: GameRoomState; allReady: boolean } | { error: string } {
+  // Allow proposal during reviewing or deliberating phases
+  if (state.phase !== 'reviewing' && state.phase !== 'deliberating' && state.phase !== 'proposing') {
     return { error: 'Not in proposal phase' };
   }
 
@@ -388,11 +529,25 @@ export function proposeOption(
     return { error: 'Invalid option' };
   }
 
+  // If in reviewing phase, just set the proposal (don't transition yet)
+  if (state.phase === 'reviewing') {
+    const newState = {
+      ...state,
+      currentProposal: optionId,
+    };
+    const allReady = checkAllReadyForNegotiation(newState);
+    return { state: newState, allReady };
+  }
+
+  // If already in deliberating/negotiation phase, transition to voting
   return {
-    ...state,
-    phase: 'voting',
-    currentProposal: optionId,
-    timerEndAt: null,
+    state: {
+      ...state,
+      phase: 'voting',
+      currentProposal: optionId,
+      timerEndAt: null,
+    },
+    allReady: true,
   };
 }
 
@@ -653,6 +808,12 @@ export function advanceToNextTurn(state: GameRoomState): GameRoomState | { colla
     modifiedDiceRoll: null,
     pendingVotes: new Map(),
     timerEndAt: null,
+    // FR-019: Reset two-phase voting state
+    subPhase: null,
+    readyToNegotiate: new Set(),
+    timerStartedAt: null,
+    recommendedDuration: null,
+    showAdvancement: false,
   };
 }
 
@@ -745,6 +906,14 @@ export function serializeRoomState(state: GameRoomState): RoomStatePayload {
     // Turn Results acknowledgment state
     pendingAcknowledgments: Array.from(state.pendingAcknowledgments),
     resultsTimeoutAt: state.resultsTimeoutAt,
+    // FR-019: Two-phase voting
+    subPhase: state.subPhase,
+    readyToNegotiate: Array.from(state.readyToNegotiate),
+    timerStartedAt: state.timerStartedAt,
+    recommendedDuration: state.recommendedDuration,
+    showAdvancement: state.showAdvancement,
+    // FR-020: Active deals
+    activeDeals: state.activeDeals,
   };
 }
 

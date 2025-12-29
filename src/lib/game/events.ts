@@ -17,6 +17,11 @@ import type {
   PoliticalConceptSummary,
   CollapseDebrief,
   LikelyVote,
+  SubPhase,
+  PlayerStatusType,
+  DealScope,
+  DealStatus,
+  DealCommitment,
 } from './types';
 
 // ============================================
@@ -94,6 +99,33 @@ export interface AcknowledgeTurnResultsMessage {
   turnNumber: number;
 }
 
+/** FR-019: Non-proposer marks ready to negotiate */
+export interface ReadyToNegotiateMessage {
+  type: 'readyToNegotiate';
+  playerId: string;
+}
+
+/** FR-020: Player proposes a deal */
+export interface ProposeDealMessage {
+  type: 'proposeDeal';
+  playerId: string;
+  targetPlayerId: string;
+  terms: {
+    initiatorCommitment: DealCommitment;
+    responderCommitment: DealCommitment;
+  };
+  scope: DealScope;
+  scopeValue?: number;
+}
+
+/** FR-020: Player responds to a deal proposal */
+export interface RespondToDealMessage {
+  type: 'respondToDeal';
+  playerId: string;
+  dealId: string;
+  accepted: boolean;
+}
+
 export type ClientMessage =
   | JoinRoomMessage
   | SelectIdeologyMessage
@@ -106,7 +138,10 @@ export type ClientMessage =
   | LeaveRoomMessage
   | ChatMessage
   | ContributeToCrisisMessage
-  | AcknowledgeTurnResultsMessage;
+  | AcknowledgeTurnResultsMessage
+  | ReadyToNegotiateMessage
+  | ProposeDealMessage
+  | RespondToDealMessage;
 
 // ============================================
 // Server → Client Messages
@@ -365,6 +400,74 @@ export interface TurnResultsCompleteMessage {
   turnNumber: number;
 }
 
+/** FR-019: Review phase started (after card drawn) */
+export interface ReviewPhaseStartedMessage {
+  type: 'reviewPhaseStarted';
+  proposerId: string;
+}
+
+/** FR-019: Player marked ready to negotiate */
+export interface PlayerReadyToNegotiateMessage {
+  type: 'playerReadyToNegotiate';
+  playerId: string;
+  readyPlayers: string[]; // All players who are ready
+  waitingPlayers: string[]; // Players still reviewing
+}
+
+/** FR-019: Negotiation phase started (all ready) */
+export interface NegotiationPhaseStartedMessage {
+  type: 'negotiationPhaseStarted';
+  timerStartedAt: number;
+  recommendedDuration: number; // 180 seconds
+}
+
+/** FR-018: Advancement revealed (after all votes cast) */
+export interface AdvancementRevealedMessage {
+  type: 'advancementRevealed';
+  card: DecisionCardPayload;
+}
+
+/** FR-020: Deal proposed */
+export interface DealProposedMessage {
+  type: 'dealProposed';
+  deal: DealPayload;
+}
+
+/** FR-020: Deal accepted/rejected */
+export interface DealResponseMessage {
+  type: 'dealResponse';
+  dealId: string;
+  accepted: boolean;
+  deal?: DealPayload; // Full deal if accepted
+}
+
+/** FR-020: Deal breach detected */
+export interface DealBreachMessage {
+  type: 'dealBreach';
+  dealId: string;
+  breakerId: string;
+  victimId: string;
+  influenceLoss: number;
+  influenceGain: number;
+}
+
+/** FR-022: Player status updated */
+export interface PlayerStatusUpdateMessage {
+  type: 'playerStatusUpdate';
+  playerId: string;
+  status: PlayerStatusType;
+  phase: GamePhase;
+  tooltip?: string; // e.g., "Waiting for [Player] to cast vote"
+}
+
+/** FR-021: Timer entered overtime */
+export interface TimerOvertimeMessage {
+  type: 'timerOvertime';
+  phase: GamePhase;
+  overtimeSeconds: number;
+  waitingPlayers: string[];
+}
+
 export type ServerMessage =
   | RoomStateSyncMessage
   | PlayerJoinedMessage
@@ -393,7 +496,17 @@ export type ServerMessage =
   | CrisisResolvedMessage
   | PlayerAfkMessage
   | PlayerActiveMessage
-  | ErrorMessage;
+  | ErrorMessage
+  // FR-018, FR-019, FR-020, FR-021, FR-022 messages
+  | ReviewPhaseStartedMessage
+  | PlayerReadyToNegotiateMessage
+  | NegotiationPhaseStartedMessage
+  | AdvancementRevealedMessage
+  | DealProposedMessage
+  | DealResponseMessage
+  | DealBreachMessage
+  | PlayerStatusUpdateMessage
+  | TimerOvertimeMessage;
 
 // ============================================
 // Payload Types (for sync)
@@ -468,6 +581,30 @@ export interface ActiveCrisisPayload {
   turnsRemaining: number;
 }
 
+/** FR-020: Deal state for sync */
+export interface DealPayload {
+  id: string;
+  initiatorId: string;
+  responderId: string;
+  terms: {
+    initiatorCommitment: DealCommitment;
+    responderCommitment: DealCommitment;
+  };
+  scope: DealScope;
+  scopeValue?: number;
+  status: DealStatus;
+  createdAt: number;
+  resolvedAt?: number;
+}
+
+/** FR-022: Player status state */
+export interface PlayerStatusPayload {
+  playerId: string;
+  status: PlayerStatusType;
+  phase: GamePhase;
+  updatedAt: number;
+}
+
 export interface RoomStatePayload {
   id: string;
   status: RoomStatus;
@@ -491,4 +628,14 @@ export interface RoomStatePayload {
   // Collapse/end game info (only set when status is 'collapsed' or 'finished')
   collapseReason?: 'stability' | 'budget';
   debrief?: CollapseDebrief;
+  // FR-019: Two-phase voting
+  subPhase?: SubPhase | null;
+  readyToNegotiate?: string[]; // Player IDs ready in Review Phase
+  timerStartedAt?: number | null; // FR-021: Guidance timer start
+  recommendedDuration?: number | null; // FR-021: Recommended seconds
+  showAdvancement?: boolean; // FR-018: Card advancement visible
+  // FR-020: Active deals
+  activeDeals?: DealPayload[];
+  // FR-022: Player statuses
+  playerStatuses?: PlayerStatusPayload[];
 }

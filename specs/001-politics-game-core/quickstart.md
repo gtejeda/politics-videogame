@@ -2,6 +2,7 @@
 
 **Feature**: 001-politics-game-core
 **Time to first game**: ~15 minutes
+**Updated**: 2025-12-28 (Added two-phase voting, deal tracking, phase indicators)
 
 ## Prerequisites
 
@@ -73,11 +74,14 @@ Navigate to `http://localhost:3000` and follow the same steps as above.
 5. Host: Click "Start Game"
 6. Play through one full turn:
    - Active player rolls dice
-   - Card is drawn
-   - Deliberate for up to 3 minutes
-   - Active player proposes an option
-   - All players vote
+   - Card is drawn (advancement hidden on back)
+   - **Review Phase**: Non-proposers read info, click "Ready to Negotiate"; proposer selects option
+   - **Deliberation Phase**: Once all ready, 3-min guidance timer starts
+   - Make deals using "Make Deal" button (optional)
+   - All players vote (Yes/No/Abstain)
+   - Watch the advancement reveal animation (card flips)
    - Watch the vote reveal animation
+   - All players click "Continue" on Turn Results screen
    - Observe movement and state changes
 
 ### Verify Core Mechanics
@@ -87,7 +91,12 @@ Navigate to `http://localhost:3000` and follow the same steps as above.
 | Real-time sync | Take an action → see it reflected in other windows immediately |
 | Tradeoffs | Check that every card option affects both Budget/Stability AND ideology alignments |
 | Movement | After vote resolves, aligned players move forward, opposed move backward |
-| Timer | Deliberation timer counts down from 3:00 |
+| **Two-phase voting (FR-019)** | Non-proposers must click "Ready to Negotiate" before deliberation begins |
+| **Hidden advancement (FR-018)** | Card back (advancement) is hidden until all votes cast, then flips to reveal |
+| **Guidance timer (FR-021)** | Timer counts down, then enters "Overtime" mode with pulsing indicator (never auto-advances) |
+| **Deal tracking (FR-020)** | Click "Make Deal" during deliberation → propose terms → both parties confirm → deal logged |
+| **Phase indicators (FR-022)** | Header bar shows phase name, timer, and player status icons (✓ ready, ⏳ waiting) |
+| **Turn Results (FR-015)** | Full-screen results with vote breakdown, movement, influence changes; all must acknowledge |
 | Support tokens | Give a token to another player, see it appear in their "held" section |
 | Collapse | Intentionally drive Stability to 0 → game ends with collapse screen |
 | Victory | Race one player to the end with ≥3 Influence → victory screen |
@@ -125,12 +134,17 @@ politics-videogame/
 
 | File | Purpose |
 |------|---------|
-| `src/lib/game/state-machine.ts` | XState definition of game flow |
+| `src/lib/game/state-machine.ts` | XState definition of game flow (includes two-phase voting) |
 | `src/lib/game/rules.ts` | Movement, voting, collapse calculations |
 | `party/index.ts` | PartyKit WebSocket message handling |
 | `src/lib/game/cards/*.ts` | Decision card content |
 | `src/components/game/Board.tsx` | Path visualization |
-| `src/components/game/VotingPanel.tsx` | Vote casting UI |
+| `src/components/game/VotingPanel.tsx` | Vote casting UI (two-phase: ReviewPhase + NegotiationPhase) |
+| `src/components/game/PhaseHeader.tsx` | Phase indicators and player status (FR-022) |
+| `src/components/game/DealTracker.tsx` | Deal tracking UI (FR-020) |
+| `src/components/game/Timer.tsx` | Guidance timer with overtime mode (FR-021) |
+| `src/components/game/TurnResults.tsx` | Turn results display (FR-015) |
+| `src/components/game/DecisionCard.tsx` | Card with flip animation for advancement reveal (FR-018) |
 
 ## Running Tests
 

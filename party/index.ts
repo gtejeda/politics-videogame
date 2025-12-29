@@ -34,6 +34,10 @@ import type {
   CrisisResolvedMessage,
   PlayerAfkMessage,
   PlayerActiveMessage,
+  // FR-019: Two-phase voting messages
+  ReviewPhaseStartedMessage,
+  PlayerReadyToNegotiateMessage,
+  NegotiationPhaseStartedMessage,
 } from '../src/lib/game/events';
 import type { Vote, Ideology, CardOptionId, DecisionCard } from '../src/lib/game/types';
 import {
@@ -63,6 +67,9 @@ import {
   checkAfkPlayers,
   skipAfkPlayerTurn,
   isActivePlayerAfk,
+  // FR-019: Two-phase voting
+  markReadyToNegotiate,
+  enterNegotiationPhase,
 } from '../src/lib/party/game-room';
 import { AFK_SETTINGS } from '../src/lib/game/constants';
 import { calculateTotalContribution } from '../src/lib/game/crises';
@@ -222,6 +229,9 @@ export default class GameParty implements Server {
       case 'acknowledgeTurnResults':
         this.handleAcknowledgeTurnResults(message.playerId, message.turnNumber);
         break;
+      case 'readyToNegotiate':
+        this.handleReadyToNegotiate(message.playerId);
+        break;
       default:
         console.warn('Unknown message type:', (message as any).type);
     }
@@ -379,7 +389,7 @@ export default class GameParty implements Server {
       return;
     }
 
-    this.state = result;
+    this.state = result.state;
 
     // Broadcast option proposed
     const proposeMessage: OptionProposedMessage = {
@@ -389,11 +399,65 @@ export default class GameParty implements Server {
     };
     this.broadcast(proposeMessage);
 
-    // Broadcast voting started
+    // FR-019: If in reviewing phase, check if all players are ready
+    if (this.state.phase === 'reviewing') {
+      // Check if all non-proposers are ready
+      if (result.allReady) {
+        this.transitionToNegotiation();
+      }
+      return;
+    }
+
+    // If in deliberating phase, transition to voting
     const votingMessage: VotingStartedMessage = {
       type: 'votingStarted',
     };
     this.broadcast(votingMessage);
+  }
+
+  // FR-019: Handle readyToNegotiate message
+  handleReadyToNegotiate(playerId: string): void {
+    if (!this.state) return;
+
+    const result = markReadyToNegotiate(this.state, playerId);
+
+    if ('error' in result) {
+      const conn = this.getConnectionForPlayer(playerId);
+      if (conn) this.sendError(conn, 'READY_FAILED', result.error);
+      return;
+    }
+
+    this.state = result.state;
+
+    // Broadcast player ready status
+    const readyMessage: PlayerReadyToNegotiateMessage = {
+      type: 'playerReadyToNegotiate',
+      playerId,
+      readyPlayers: Array.from(this.state.readyToNegotiate),
+      waitingPlayers: Array.from(this.state.players.keys()).filter(
+        id => id !== this.state!.activePlayerId && !this.state!.readyToNegotiate.has(id)
+      ),
+    };
+    this.broadcast(readyMessage);
+
+    // Check if all players are ready to transition
+    if (result.allReady) {
+      this.transitionToNegotiation();
+    }
+  }
+
+  // FR-019: Transition to Negotiation Phase
+  transitionToNegotiation(): void {
+    if (!this.state) return;
+
+    this.state = enterNegotiationPhase(this.state);
+
+    const negotiationMessage: NegotiationPhaseStartedMessage = {
+      type: 'negotiationPhaseStarted',
+      timerStartedAt: this.state.timerStartedAt || Date.now(),
+      recommendedDuration: this.state.recommendedDuration || 180,
+    };
+    this.broadcast(negotiationMessage);
   }
 
   handleCastVote(playerId: string, choice: Vote['choice'], influenceSpent: number): void {

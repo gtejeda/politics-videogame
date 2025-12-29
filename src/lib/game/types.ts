@@ -20,13 +20,29 @@ export type GamePhase =
   | 'waiting'
   | 'rolling'
   | 'drawing'
-  | 'deliberating'
+  | 'reviewing'      // FR-019: Review Phase (before deliberation)
+  | 'deliberating'   // FR-019: Negotiation Phase
   | 'proposing'
   | 'voting'
   | 'revealing'
   | 'resolving'
   | 'showingResults'
   | 'crisis';
+
+// FR-019: Sub-phases for two-phase voting
+export type SubPhase = 'reviewPhase' | 'negotiationPhase';
+
+// FR-022: Player status for phase tracking
+export type PlayerStatusType = 'ready' | 'waiting' | 'acting';
+
+// FR-020: Deal types
+export type DealScope = 'this_vote' | 'next_n_turns';
+export type DealStatus = 'pending' | 'active' | 'fulfilled' | 'broken';
+
+// FR-020: Deal commitment type
+export type DealCommitment =
+  | { type: 'vote'; choice: 'yes' | 'no' }
+  | { type: 'token'; action: 'give' | 'receive' };
 
 export type VoteChoice = 'yes' | 'no' | 'abstain';
 
@@ -228,4 +244,42 @@ export interface IdeologyPerspective {
   ideology: Ideology;
   typicalStance: string; // 1-2 sentences explaining this ideology's typical approach
   likelyVote: LikelyVote;
+}
+
+// ============================================
+// Deal System (FR-020)
+// ============================================
+
+/**
+ * A formalized, tracked agreement between two players made during Deliberation Phase.
+ */
+export interface Deal {
+  id: string;
+  initiatorId: string;
+  responderId: string;
+  terms: DealTerms;
+  scope: DealScope;
+  scopeValue?: number; // Number of turns if scope is 'next_n_turns'
+  status: DealStatus;
+  createdAt: number;
+  resolvedAt?: number;
+}
+
+export interface DealTerms {
+  initiatorCommitment: DealCommitment;
+  responderCommitment: DealCommitment;
+}
+
+// ============================================
+// Player Status (FR-022)
+// ============================================
+
+/**
+ * Tracks individual player's readiness within a phase.
+ */
+export interface PlayerStatus {
+  playerId: string;
+  status: PlayerStatusType;
+  phase: GamePhase;
+  updatedAt: number;
 }
