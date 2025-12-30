@@ -108,6 +108,8 @@ export default function RoomPage() {
           turnResultsData={gameState.turnResultsData}
           hasAcknowledgedResults={gameState.hasAcknowledgedResults}
           afkPlayers={gameState.afkPlayers}
+          dealBreachData={gameState.dealBreachData}
+          crisisResolutionData={gameState.crisisResolutionData}
         />
       );
 

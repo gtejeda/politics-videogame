@@ -1,12 +1,16 @@
 'use client';
 
+import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { IdeologyPicker } from './IdeologyPicker';
 import { QRShare } from './QRShare';
+import { Tutorial } from './Tutorial';
+import { usePlayerPrefs } from '@/lib/hooks/usePlayerPrefs';
 import type { RoomStatePayload } from '@/lib/game/events';
 import type { Ideology } from '@/lib/game/types';
 import { IDEOLOGY_DEFINITIONS } from '@/lib/game/ideologies';
+import { HelpCircle, Settings } from 'lucide-react';
 
 interface LobbyProps {
   roomId: string;
@@ -25,6 +29,8 @@ export function Lobby({
   onSelectIdeology,
   onStartGame,
 }: LobbyProps) {
+  const [tutorialOpen, setTutorialOpen] = useState(false);
+  const { prefs, toggleHints, isLoaded } = usePlayerPrefs();
   const players = roomState.players;
   const localPlayer = players.find(p => p.id === localPlayerId);
   const playerCount = players.length;
@@ -156,7 +162,56 @@ export function Lobby({
             Waiting for host to start the game...
           </p>
         )}
+
+        {/* How to Play & Settings */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Settings className="h-4 w-4" />
+              Help & Settings
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* How to Play Button */}
+            <Button
+              variant="outline"
+              className="w-full justify-start gap-2"
+              onClick={() => setTutorialOpen(true)}
+            >
+              <HelpCircle className="h-4 w-4" />
+              How to Play
+            </Button>
+
+            {/* Hint Toggle */}
+            {isLoaded && (
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div>
+                  <p className="text-sm font-medium">Gameplay Hints</p>
+                  <p className="text-xs text-muted-foreground">
+                    Show helpful tips during your first games
+                  </p>
+                </div>
+                <button
+                  onClick={toggleHints}
+                  className={`relative h-6 w-11 rounded-full transition-colors ${
+                    prefs.hintsEnabled ? 'bg-primary' : 'bg-muted'
+                  }`}
+                  aria-label="Toggle hints"
+                >
+                  <span
+                    className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
+                      prefs.hintsEnabled ? 'left-5' : 'left-0.5'
+                    }`}
+                  />
+                </button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
+
+      {/* Tutorial Dialog */}
+      <Tutorial open={tutorialOpen} onOpenChange={setTutorialOpen} />
     </div>
   );
 }

@@ -260,6 +260,29 @@ export interface DealResolvedMessage {
   holderId: string;
 }
 
+/** T032/T033: Player analysis data for post-game debrief */
+export interface PlayerAnalysisPayload {
+  playerId: string;
+  playerName: string;
+  ideology: Ideology;
+  finalPosition: number;
+  finalInfluence: number;
+  totalVotes: number;
+  alignedVotes: number;
+  ideologyAlignmentPercent: number;
+}
+
+/** T033: Vote impact data for identifying most impactful decisions */
+export interface VoteImpactPayload {
+  turnNumber: number;
+  cardTitle: string;
+  optionChosen: string;
+  nationChange: { stability: number; budget: number };
+  voteMargin: number;
+  impactScore: number;
+  wasDecisive: boolean;
+}
+
 export interface GameEndedVictoryMessage {
   type: 'gameEndedVictory';
   winnerId: string;
@@ -270,6 +293,10 @@ export interface GameEndedVictoryMessage {
     influence: number;
   }>;
   conceptsSummary: PoliticalConceptSummary[];
+  /** T032: Per-player ideology alignment analysis */
+  playerAnalyses?: PlayerAnalysisPayload[];
+  /** T033: Most impactful votes in the game */
+  impactfulVotes?: VoteImpactPayload[];
 }
 
 export interface GameEndedCollapseMessage {
@@ -628,6 +655,10 @@ export interface RoomStatePayload {
   // Collapse/end game info (only set when status is 'collapsed' or 'finished')
   collapseReason?: 'stability' | 'budget';
   debrief?: CollapseDebrief;
+  // T029-T033: Post-game debrief data (for victory outcomes)
+  conceptsSummary?: PoliticalConceptSummary[];
+  playerAnalyses?: PlayerAnalysisPayload[];
+  impactfulVotes?: VoteImpactPayload[];
   // FR-019: Two-phase voting
   subPhase?: SubPhase | null;
   readyToNegotiate?: string[]; // Player IDs ready in Review Phase

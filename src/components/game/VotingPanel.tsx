@@ -17,6 +17,7 @@ import {
 import { cn } from '@/lib/utils';
 import type { DecisionCardPayload, PlayerStatePayload } from '@/lib/game/events';
 import type { CardOptionId, VoteChoice } from '@/lib/game/types';
+import { TermTooltipInline } from './TermTooltip';
 
 // Swipe threshold for triggering vote selection
 const SWIPE_THRESHOLD = 100;
@@ -246,7 +247,7 @@ export function VotingPanel({
             {maxInfluence > 0 && (
               <div className="rounded-lg border p-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm">Spend Influence for extra votes:</span>
+                  <span className="text-sm"><TermTooltipInline term="influence">Spend Influence</TermTooltipInline> for extra votes:</span>
                   <span className="text-sm text-muted-foreground">
                     Available: {maxInfluence}
                   </span>

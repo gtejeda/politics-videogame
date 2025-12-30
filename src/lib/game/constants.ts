@@ -82,8 +82,8 @@ export const TIMING = {
 // ============================================
 
 export const AFK_SETTINGS = {
-  TIMEOUT_MS: 60000,           // Time before player marked AFK
-  INFLUENCE_PENALTY: 1,        // Influence lost per AFK timeout
+  TIMEOUT_MS: 60000,           // Time before player marked AFK (informational only)
+  INFLUENCE_PENALTY: 0,        // No penalty - timers are informational only
   AUTO_CONTINUE_DELAY_MS: 30000, // 30s before auto-continue on Turn Results
 } as const;
 

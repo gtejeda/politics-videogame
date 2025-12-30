@@ -1,13 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useEffect, useState, useMemo } from 'react';
+import { motion } from 'framer-motion';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { IDEOLOGY_DEFINITIONS } from '@/lib/game/ideologies';
+import { VoteBreakdown } from './VoteBreakdown';
+import { MovementBreakdown } from './MovementBreakdown';
 import type { TurnResultsDisplayMessage, PlayerStatePayload } from '@/lib/game/events';
-import type { VoteChoice, Ideology } from '@/lib/game/types';
+import type { Ideology } from '@/lib/game/types';
 
 interface TurnResultsProps {
   results: TurnResultsDisplayMessage;
@@ -47,25 +49,16 @@ export function TurnResults({
     return players.find(p => p.id === playerId)?.ideology || null;
   };
 
-  const getVoteIcon = (choice: VoteChoice) => {
-    switch (choice) {
-      case 'yes': return '✓';
-      case 'no': return '✗';
-      case 'abstain': return '—';
-    }
-  };
-
-  const getVoteColor = (choice: VoteChoice) => {
-    switch (choice) {
-      case 'yes': return 'text-green-600 dark:text-green-400';
-      case 'no': return 'text-red-600 dark:text-red-400';
-      case 'abstain': return 'text-gray-500';
-    }
-  };
-
-  const acknowledgedPlayers = players.filter(
-    p => !results.pendingAcknowledgments.includes(p.id)
-  );
+  // Create ideology map for vote breakdown
+  const playerIdeologies = useMemo(() => {
+    const map = new Map<string, Ideology>();
+    players.forEach(p => {
+      if (p.ideology) {
+        map.set(p.id, p.ideology);
+      }
+    });
+    return map;
+  }, [players]);
 
   return (
     <motion.div
@@ -95,52 +88,17 @@ export function TurnResults({
           </CardHeader>
 
           <CardContent className="space-y-6">
-            {/* Vote Tally */}
-            <div className="rounded-lg bg-muted p-4">
-              <h3 className="font-semibold mb-3 text-center">Vote Results</h3>
-              <div className="flex justify-center gap-8 mb-4">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-green-600">{results.voteResults.yesVotes}</div>
-                  <div className="text-sm text-muted-foreground">Yes</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-red-600">{results.voteResults.noVotes}</div>
-                  <div className="text-sm text-muted-foreground">No</div>
-                </div>
-                {results.voteResults.abstainCount > 0 && (
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-gray-500">{results.voteResults.abstainCount}</div>
-                    <div className="text-sm text-muted-foreground">Abstain</div>
-                  </div>
-                )}
-              </div>
-              <div className="flex flex-wrap justify-center gap-2">
-                {results.voteResults.votes.map((vote) => {
-                  const ideology = getPlayerIdeology(vote.playerId);
-                  return (
-                    <div
-                      key={vote.playerId}
-                      className={cn(
-                        'flex items-center gap-1 px-2 py-1 rounded-full text-sm',
-                        vote.playerId === localPlayerId && 'ring-2 ring-primary'
-                      )}
-                      style={{
-                        backgroundColor: ideology ? `${IDEOLOGY_DEFINITIONS[ideology].color}20` : undefined
-                      }}
-                    >
-                      {ideology && (
-                        <span>{IDEOLOGY_DEFINITIONS[ideology].icon}</span>
-                      )}
-                      <span>{vote.playerName}</span>
-                      <span className={cn('font-bold', getVoteColor(vote.choice))}>
-                        {getVoteIcon(vote.choice)}
-                        {vote.weight > 1 && <span className="text-xs ml-0.5">×{vote.weight}</span>}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+            {/* Vote Breakdown - T056: Integrate VoteBreakdown */}
+            <VoteBreakdown
+              votes={results.voteResults.votes}
+              yesVotes={results.voteResults.yesVotes}
+              noVotes={results.voteResults.noVotes}
+              abstainCount={results.voteResults.abstainCount}
+              passed={results.votePassed}
+              localPlayerId={localPlayerId}
+              playerIdeologies={playerIdeologies}
+              showMargin={true}
+            />
 
             {/* Nation Changes */}
             <div className="rounded-lg bg-muted p-4">
@@ -226,27 +184,13 @@ export function TurnResults({
                       </div>
                     </div>
 
-                    {/* Movement Breakdown */}
-                    <div className="text-xs text-muted-foreground space-y-0.5 pl-8">
-                      {effect.movementBreakdown.diceRoll !== null && effect.movementBreakdown.diceRoll > 0 && (
-                        <div>Dice roll: +{effect.movementBreakdown.diceRoll}</div>
-                      )}
-                      {effect.movementBreakdown.ideologyBonus > 0 && (
-                        <div className="text-green-600">Ideology aligned: +{effect.movementBreakdown.ideologyBonus}</div>
-                      )}
-                      {effect.movementBreakdown.ideologyPenalty < 0 && (
-                        <div className="text-red-600">Ideology opposed: {effect.movementBreakdown.ideologyPenalty}</div>
-                      )}
-                      {effect.movementBreakdown.nationModifier !== 0 && (
-                        <div className={effect.movementBreakdown.nationModifier > 0 ? 'text-green-600' : 'text-red-600'}>
-                          Nation state: {effect.movementBreakdown.nationModifier > 0 ? '+' : ''}{effect.movementBreakdown.nationModifier}
-                        </div>
-                      )}
-                      {effect.movementBreakdown.influenceModifier !== 0 && (
-                        <div className={effect.movementBreakdown.influenceModifier > 0 ? 'text-green-600' : 'text-red-600'}>
-                          Influence modifier: {effect.movementBreakdown.influenceModifier > 0 ? '+' : ''}{effect.movementBreakdown.influenceModifier}
-                        </div>
-                      )}
+                    {/* Movement Breakdown - T057: Integrate MovementBreakdown */}
+                    <div className="pl-8">
+                      <MovementBreakdown
+                        breakdown={effect.movementBreakdown}
+                        showTotal={false}
+                        compact={true}
+                      />
                     </div>
 
                     {/* Influence Change */}

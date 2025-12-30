@@ -4,6 +4,12 @@ import { cn } from '@/lib/utils';
 import type { PlayerStatePayload } from '@/lib/game/events';
 import { IDEOLOGY_DEFINITIONS } from '@/lib/game/ideologies';
 import { INFLUENCE_THRESHOLDS } from '@/lib/game/constants';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 interface PlayerTrackProps {
   player: PlayerStatePayload;
@@ -34,28 +40,37 @@ export function PlayerTrack({ player, isActive, isLocal, pathLength, isAfk = fal
   const ideologyDef = ideology ? IDEOLOGY_DEFINITIONS[ideology] : null;
 
   return (
-    <div
-      className={cn(
-        'rounded-lg border p-3 transition-all',
-        isActive && 'border-primary bg-primary/5',
-        isLocal && 'ring-2 ring-primary ring-offset-2',
-        !isConnected && 'opacity-50'
-      )}
-    >
-      {/* Header: Name and Ideology */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          {ideologyDef && (
-            <div
-              className="flex h-6 w-6 items-center justify-center rounded-full text-xs"
-              style={{ backgroundColor: ideologyDef.color }}
-            >
-              {ideologyDef.icon}
-            </div>
-          )}
-          <span className={cn('font-medium', isActive && 'text-primary')}>
-            {name}
-          </span>
+    <TooltipProvider>
+      <div
+        className={cn(
+          'rounded-lg border p-3 transition-all',
+          isActive && 'border-primary bg-primary/5',
+          isLocal && 'ring-2 ring-primary ring-offset-2',
+          !isConnected && 'opacity-50'
+        )}
+      >
+        {/* Header: Name and Ideology */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {ideologyDef && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div
+                    className="flex h-6 w-6 cursor-help items-center justify-center rounded-full text-xs"
+                    style={{ backgroundColor: ideologyDef.color }}
+                  >
+                    {ideologyDef.icon}
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="font-medium">{ideologyDef.name}</p>
+                  <p className="text-xs text-muted-foreground">{ideologyDef.coreConcern}</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+            <span className={cn('font-medium', isActive && 'text-primary')}>
+              {name}
+            </span>
           {isActive && (
             <span className="rounded bg-primary px-1.5 py-0.5 text-xs text-primary-foreground">
               Active
@@ -129,5 +144,6 @@ export function PlayerTrack({ player, isActive, isLocal, pathLength, isAfk = fal
         </div>
       </div>
     </div>
+    </TooltipProvider>
   );
 }

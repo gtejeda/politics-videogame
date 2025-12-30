@@ -39,7 +39,7 @@ import type {
   PlayerReadyToNegotiateMessage,
   NegotiationPhaseStartedMessage,
 } from '../src/lib/game/events';
-import type { Vote, Ideology, CardOptionId, DecisionCard } from '../src/lib/game/types';
+import type { Vote, Ideology, CardOptionId, DecisionCard, PoliticalConceptSummary, TurnHistory } from '../src/lib/game/types';
 import {
   GameRoomState,
   createInitialRoomState,
@@ -77,6 +77,218 @@ import { getMostAdvancedZone } from '../src/lib/game/rules';
 
 // Card decks with zone-based selection
 import { drawCardFromZone } from '../src/lib/game/cards';
+import { generateCollapseDebrief } from '../src/lib/game/debrief';
+
+/**
+ * Generate concept summaries based on game history (T029-T033)
+ */
+function generateConceptSummaries(history: TurnHistory[]): PoliticalConceptSummary[] {
+  const concepts: PoliticalConceptSummary[] = [];
+  const demonstratedConcepts = new Set<string>();
+
+  // Coalition building (multiple players voting together on passed votes)
+  const passedVotes = history.filter(turn => turn.passed && turn.votes && turn.votes.length > 2);
+  if (passedVotes.length > 0 && !demonstratedConcepts.has('coalition-building')) {
+    concepts.push({
+      concept: 'Coalition Building',
+      description: 'Working with other ideologies to achieve shared goals.',
+      example: `Turn ${passedVotes[0].turnNumber}: Multiple parties voted together to pass legislation.`,
+    });
+    demonstratedConcepts.add('coalition-building');
+  }
+
+  // Strategic voting
+  if (history.filter(turn => turn.passed).length >= 3 && !demonstratedConcepts.has('strategic-voting')) {
+    concepts.push({
+      concept: 'Strategic Voting',
+      description: 'Sometimes voting pragmatically rather than purely ideologically.',
+      example: 'Players made strategic choices to achieve outcomes beyond pure ideology.',
+    });
+    demonstratedConcepts.add('strategic-voting');
+  }
+
+  // Fiscal responsibility (budget-positive decisions)
+  const fiscalTurns = history.filter(
+    turn => turn.passed && turn.nationChanges && turn.nationChanges.budgetChange > 0
+  );
+  if (fiscalTurns.length > 0 && !demonstratedConcepts.has('fiscal-responsibility')) {
+    concepts.push({
+      concept: 'Fiscal Responsibility',
+      description: 'Balancing budget concerns with policy goals.',
+      example: `Turn ${fiscalTurns[0].turnNumber}: A budget-positive decision was made.`,
+    });
+    demonstratedConcepts.add('fiscal-responsibility');
+  }
+
+  // Stability focus
+  const stabilityTurns = history.filter(
+    turn => turn.passed && turn.nationChanges && turn.nationChanges.stabilityChange > 0
+  );
+  if (stabilityTurns.length > 0 && !demonstratedConcepts.has('stability-focus')) {
+    concepts.push({
+      concept: 'Stability Over Ideology',
+      description: 'Prioritizing government stability over ideological purity.',
+      example: `Turn ${stabilityTurns[0].turnNumber}: Stability was prioritized in a key vote.`,
+    });
+    demonstratedConcepts.add('stability-focus');
+  }
+
+  // Close votes (compromise)
+  const closeVotes = history.filter(turn => {
+    if (!turn.votes) return false;
+    const yesVotes = turn.votes.filter(v => v.choice === 'yes').length;
+    const noVotes = turn.votes.filter(v => v.choice === 'no').length;
+    return Math.abs(yesVotes - noVotes) <= 1;
+  });
+  if (closeVotes.length > 0 && !demonstratedConcepts.has('compromise')) {
+    concepts.push({
+      concept: 'Compromise Legislation',
+      description: 'Finding middle-ground policies that different factions can accept.',
+      example: `Turn ${closeVotes[0].turnNumber}: A close vote showed the power of negotiation.`,
+    });
+    demonstratedConcepts.add('compromise');
+  }
+
+  return concepts;
+}
+
+/**
+ * T032: Calculate ideology alignment percentage for each player
+ */
+function calculatePlayerAnalyses(
+  players: Map<string, { id: string; name: string; ideology: Ideology | null; position: number; influence: number }>,
+  history: TurnHistory[]
+): Array<{
+  playerId: string;
+  playerName: string;
+  ideology: Ideology;
+  finalPosition: number;
+  finalInfluence: number;
+  totalVotes: number;
+  alignedVotes: number;
+  ideologyAlignmentPercent: number;
+}> {
+  const analyses: Array<{
+    playerId: string;
+    playerName: string;
+    ideology: Ideology;
+    finalPosition: number;
+    finalInfluence: number;
+    totalVotes: number;
+    alignedVotes: number;
+    ideologyAlignmentPercent: number;
+  }> = [];
+
+  for (const player of players.values()) {
+    if (!player.ideology) continue;
+
+    let totalVotes = 0;
+    let alignedVotes = 0;
+
+    // Count aligned votes based on card option alignment
+    for (const turn of history) {
+      const playerVote = turn.votes.find(v => v.playerId === player.id);
+      if (!playerVote || playerVote.choice === 'abstain') continue;
+
+      totalVotes++;
+
+      // Check if player's vote aligned with their ideology
+      const option = turn.card.options.find(o => o.id === turn.proposedOption);
+      if (option) {
+        const isAligned = option.aligned.some(a => a.ideology === player.ideology);
+        const isOpposed = option.opposed.some(o => o.ideology === player.ideology);
+
+        // Voting "yes" on aligned or "no" on opposed is aligned behavior
+        if ((isAligned && playerVote.choice === 'yes') || (isOpposed && playerVote.choice === 'no')) {
+          alignedVotes++;
+        }
+        // Voting "yes" when neutral is not misaligned
+        else if (!isAligned && !isOpposed) {
+          alignedVotes++; // Neutral is fine
+        }
+      }
+    }
+
+    const alignmentPercent = totalVotes > 0 ? (alignedVotes / totalVotes) * 100 : 0;
+
+    analyses.push({
+      playerId: player.id,
+      playerName: player.name,
+      ideology: player.ideology,
+      finalPosition: player.position,
+      finalInfluence: player.influence,
+      totalVotes,
+      alignedVotes,
+      ideologyAlignmentPercent: Math.round(alignmentPercent),
+    });
+  }
+
+  return analyses;
+}
+
+/**
+ * T033: Calculate vote impact scores to identify most impactful decisions
+ */
+function calculateVoteImpacts(history: TurnHistory[]): Array<{
+  turnNumber: number;
+  cardTitle: string;
+  optionChosen: string;
+  nationChange: { stability: number; budget: number };
+  voteMargin: number;
+  impactScore: number;
+  wasDecisive: boolean;
+}> {
+  const impacts: Array<{
+    turnNumber: number;
+    cardTitle: string;
+    optionChosen: string;
+    nationChange: { stability: number; budget: number };
+    voteMargin: number;
+    impactScore: number;
+    wasDecisive: boolean;
+  }> = [];
+
+  for (const turn of history) {
+    if (!turn.passed || !turn.votes) continue;
+
+    const yesVotes = turn.votes.filter(v => v.choice === 'yes').length;
+    const noVotes = turn.votes.filter(v => v.choice === 'no').length;
+    const voteMargin = yesVotes - noVotes;
+
+    // Calculate impact score based on nation changes + margin closeness
+    const stabilityImpact = Math.abs(turn.nationChanges?.stabilityChange || 0);
+    const budgetImpact = Math.abs(turn.nationChanges?.budgetChange || 0);
+    const marginFactor = voteMargin === 1 ? 2 : voteMargin === 2 ? 1.5 : 1; // Closer margins are more impactful
+    const impactScore = (stabilityImpact * 2 + budgetImpact) * marginFactor;
+
+    const option = turn.card.options.find(o => o.id === turn.proposedOption);
+
+    impacts.push({
+      turnNumber: turn.turnNumber,
+      cardTitle: turn.card.title,
+      optionChosen: option?.name || turn.proposedOption,
+      nationChange: {
+        stability: turn.nationChanges?.stabilityChange || 0,
+        budget: turn.nationChanges?.budgetChange || 0,
+      },
+      voteMargin,
+      impactScore,
+      wasDecisive: false, // Will mark the closest vote as decisive
+    });
+  }
+
+  // Mark the closest vote as decisive
+  if (impacts.length > 0) {
+    const minMargin = Math.min(...impacts.map(i => Math.abs(i.voteMargin)));
+    const decisiveIndex = impacts.findIndex(i => Math.abs(i.voteMargin) === minMargin);
+    if (decisiveIndex >= 0) {
+      impacts[decisiveIndex].wasDecisive = true;
+    }
+  }
+
+  // Sort by impact score descending
+  return impacts.sort((a, b) => b.impactScore - a.impactScore);
+}
 
 export default class GameParty implements Server {
   readonly room: Party;
@@ -674,16 +886,14 @@ export default class GameParty implements Server {
 
     if ('collapsed' in result) {
       this.state = { ...this.state, status: 'collapsed' };
+      // Generate debrief using game history (T030)
+      const history = this.state.history || [];
+      const debrief = generateCollapseDebrief(result.reason, this.state.nation, history);
       const collapseMessage: GameEndedCollapseMessage = {
         type: 'gameEndedCollapse',
         reason: result.reason,
         finalState: this.state.nation,
-        debrief: {
-          whatHappened: `The nation collapsed due to ${result.reason === 'stability' ? 'political instability' : 'budget crisis'}.`,
-          realWorldParallel: 'Similar situations have occurred in history when governments failed to maintain basic functions.',
-          lesson: 'Effective governance requires balancing competing priorities while maintaining essential stability.',
-          keyDecisions: [],
-        },
+        debrief,
       };
       this.broadcast(collapseMessage);
       return;
@@ -692,6 +902,13 @@ export default class GameParty implements Server {
     if ('winner' in result) {
       this.state = { ...this.state, status: 'finished' };
       const winner = this.state.players.get(result.winner)!;
+      // Generate concept summaries using game history (T029, T033)
+      const history = this.state.history || [];
+      const conceptsSummary = generateConceptSummaries(history);
+      // T032: Calculate player ideology alignment analyses
+      const playerAnalyses = calculatePlayerAnalyses(this.state.players, history);
+      // T033: Calculate vote impact scores
+      const impactfulVotes = calculateVoteImpacts(history);
       const victoryMessage: GameEndedVictoryMessage = {
         type: 'gameEndedVictory',
         winnerId: result.winner,
@@ -701,7 +918,9 @@ export default class GameParty implements Server {
           position: p.position,
           influence: p.influence,
         })),
-        conceptsSummary: [],
+        conceptsSummary,
+        playerAnalyses,
+        impactfulVotes,
       };
       this.broadcast(victoryMessage);
       return;
@@ -879,16 +1098,14 @@ export default class GameParty implements Server {
     if (this.state.nation.stability <= 0 || this.state.nation.budget <= -5) {
       const reason = this.state.nation.stability <= 0 ? 'stability' : 'budget';
       this.state = { ...this.state, status: 'collapsed' };
+      // Generate debrief using game history
+      const history = this.state.history || [];
+      const debrief = generateCollapseDebrief(reason, this.state.nation, history);
       const collapseMessage: GameEndedCollapseMessage = {
         type: 'gameEndedCollapse',
         reason,
         finalState: this.state.nation,
-        debrief: {
-          whatHappened: `The nation collapsed due to ${reason === 'stability' ? 'political instability' : 'budget crisis'} following an unresolved crisis.`,
-          realWorldParallel: 'Similar situations have occurred in history when governments failed to manage crisis situations effectively.',
-          lesson: 'Effective crisis management requires coordination and shared sacrifice.',
-          keyDecisions: [],
-        },
+        debrief,
       };
       this.broadcast(collapseMessage);
       return;
@@ -984,8 +1201,8 @@ export default class GameParty implements Server {
   // ============================================
 
   /**
-   * Periodic check for AFK players
-   * Applies penalties and skips turns as needed
+   * Periodic check for AFK players (informational only - no penalties)
+   * Timers help players know how long they're taking but never skip turns
    */
   checkForAfkPlayers(): void {
     if (!this.state || this.state.status !== 'playing') return;
@@ -996,22 +1213,18 @@ export default class GameParty implements Server {
     const afkResult = checkAfkPlayers(this.state);
     this.state = afkResult.state;
 
-    // Broadcast AFK notifications
+    // Broadcast AFK notifications (informational only - no penalties)
     for (const afkPlayer of afkResult.newAfkPlayers) {
       const afkMessage: PlayerAfkMessage = {
         type: 'playerAfk',
         playerId: afkPlayer.playerId,
         playerName: afkPlayer.playerName,
-        influenceLost: afkPlayer.influenceLost,
+        influenceLost: 0, // No penalty - timers are informational only
         newInfluence: afkPlayer.newInfluence,
-        turnSkipped: this.state.activePlayerId === afkPlayer.playerId,
+        turnSkipped: false, // Never skip turns for AFK
       };
       this.broadcast(afkMessage);
-
-      // Skip turn if the AFK player is the active player
-      if (this.state.activePlayerId === afkPlayer.playerId) {
-        this.skipActivePlayerTurn();
-      }
+      // Note: No turn skipping - timers are informational only
     }
   }
 

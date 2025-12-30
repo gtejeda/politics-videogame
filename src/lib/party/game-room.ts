@@ -1179,7 +1179,7 @@ export function recordPlayerActivity(
 }
 
 /**
- * Check for AFK players and apply penalties
+ * Check for AFK players (informational only - no penalties applied)
  * Returns the updated state and any players who became AFK
  */
 export function checkAfkPlayers(
@@ -1187,7 +1187,6 @@ export function checkAfkPlayers(
 ): { state: GameRoomState; newAfkPlayers: Array<{ playerId: string; playerName: string; influenceLost: number; newInfluence: number }> } {
   const now = Date.now();
   const newAfkPlayers: Array<{ playerId: string; playerName: string; influenceLost: number; newInfluence: number }> = [];
-  const newPlayers = new Map(state.players);
   const afkSet = new Set(state.afkPlayers);
 
   for (const [playerId, player] of state.players) {
@@ -1200,22 +1199,14 @@ export function checkAfkPlayers(
     const timeSinceActivity = now - lastActivity;
 
     if (timeSinceActivity >= AFK_SETTINGS.TIMEOUT_MS) {
-      // Mark as AFK and apply penalty
+      // Mark as AFK (informational only - no influence penalty)
       afkSet.add(playerId);
-
-      const influenceLost = Math.min(player.influence, AFK_SETTINGS.INFLUENCE_PENALTY);
-      const newInfluence = Math.max(0, player.influence - influenceLost);
-
-      newPlayers.set(playerId, {
-        ...player,
-        influence: newInfluence,
-      });
 
       newAfkPlayers.push({
         playerId,
         playerName: player.name,
-        influenceLost,
-        newInfluence,
+        influenceLost: 0, // No penalty - timers are informational only
+        newInfluence: player.influence,
       });
     }
   }
@@ -1223,7 +1214,6 @@ export function checkAfkPlayers(
   return {
     state: {
       ...state,
-      players: newPlayers,
       afkPlayers: afkSet,
     },
     newAfkPlayers,

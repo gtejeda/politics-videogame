@@ -206,6 +206,11 @@ export function PlayerStatusRow({
               </TooltipTrigger>
               <TooltipContent>
                 <p className="font-medium">{player.name}</p>
+                {ideologyDef && (
+                  <p className="text-xs" style={{ color: ideologyDef.color }}>
+                    {ideologyDef.icon} {ideologyDef.name}
+                  </p>
+                )}
                 <p className="text-xs text-muted-foreground">
                   {getTooltipText(player)}
                 </p>

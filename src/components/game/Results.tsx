@@ -1,11 +1,18 @@
 'use client';
 
+import { useState } from 'react';
+
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import type { RoomStatePayload } from '@/lib/game/events';
 import { IDEOLOGY_DEFINITIONS } from '@/lib/game/ideologies';
 import { getCollapseEducation } from '@/lib/game/debrief';
 import { POLITICAL_CONCEPTS } from '@/lib/game/concepts';
+import { GameDebrief, type GameDebriefData } from './GameDebrief';
+import { VictoryCelebration } from './VictoryCelebration';
+import { CollapseSequence } from './CollapseSequence';
+import type { PoliticalConcept } from './ConceptCard';
+import type { VoteImpact, AlignmentData } from './ImpactAnalysis';
 import { cn } from '@/lib/utils';
 
 interface ResultsProps {
@@ -17,6 +24,7 @@ interface ResultsProps {
 
 export function Results({ roomState, localPlayerId, onPlayAgain, onHome }: ResultsProps) {
   const isCollapsed = roomState.status === 'collapsed';
+  const [showIntro, setShowIntro] = useState(true);
 
   // Sort players by position (descending)
   const sortedPlayers = [...roomState.players].sort((a, b) => b.position - a.position);
@@ -24,6 +32,100 @@ export function Results({ roomState, localPlayerId, onPlayAgain, onHome }: Resul
   // Find winner (only for victory, not collapse)
   const winner = !isCollapsed ? sortedPlayers[0] : null;
   const isLocalWinner = winner?.id === localPlayerId;
+
+  // T031: Build GameDebrief data from roomState
+  const renderGameDebrief = () => {
+    // Map concept names to categories
+    const getCategoryFromName = (name: string): PoliticalConcept['category'] => {
+      const coalitionConcepts = ['coalition building', 'trust and commitment'];
+      const strategyConcepts = ['strategic voting', 'political capital'];
+      const governanceConcepts = ['fiscal responsibility', 'stability over ideology', 'institutional stability', 'crisis management'];
+      const lowerName = name.toLowerCase();
+      if (coalitionConcepts.some(c => lowerName.includes(c))) return 'coalition';
+      if (strategyConcepts.some(c => lowerName.includes(c))) return 'strategy';
+      if (governanceConcepts.some(c => lowerName.includes(c))) return 'governance';
+      return 'negotiation';
+    };
+
+    // Convert concepts from server format to component format
+    const concepts: PoliticalConcept[] = (roomState.conceptsSummary || []).map((c) => ({
+      id: c.concept.toLowerCase().replace(/\s+/g, '-'),
+      name: c.concept,
+      description: c.description,
+      category: getCategoryFromName(c.concept),
+      examples: [c.example],
+    }));
+
+    // If no concepts from server, fall back to static concepts
+    const displayConcepts = concepts.length > 0 ? concepts : POLITICAL_CONCEPTS.slice(0, 4).map((c) => ({
+      id: c.id,
+      name: c.name,
+      description: c.description,
+      category: getCategoryFromName(c.name),
+      examples: [c.example],
+    }));
+
+    // T033: Convert vote impacts
+    const impactfulVotes: VoteImpact[] | undefined = roomState.impactfulVotes?.map((v) => ({
+      turnNumber: v.turnNumber,
+      cardTitle: v.cardTitle,
+      optionChosen: v.optionChosen,
+      nationChange: v.nationChange,
+      voteMargin: v.voteMargin,
+      impactScore: v.impactScore,
+      wasDecisive: v.wasDecisive,
+    }));
+
+    // T032: Get local player's alignment data
+    const localPlayerAnalysis = roomState.playerAnalyses?.find((p) => p.playerId === localPlayerId);
+    const alignmentData: AlignmentData | undefined = localPlayerAnalysis ? {
+      ideology: localPlayerAnalysis.ideology,
+      totalVotes: localPlayerAnalysis.totalVotes,
+      alignedVotes: localPlayerAnalysis.alignedVotes,
+      opposedVotes: localPlayerAnalysis.totalVotes - localPlayerAnalysis.alignedVotes,
+      alignmentPercentage: localPlayerAnalysis.ideologyAlignmentPercent,
+    } : undefined;
+
+    const debriefData: GameDebriefData = {
+      concepts: displayConcepts,
+      turnsPlayed: roomState.currentTurn,
+      impactfulVotes,
+      alignmentData,
+    };
+
+    return (
+      <GameDebrief
+        data={debriefData}
+        winnerName={winner?.name}
+        isCollapse={isCollapsed}
+      />
+    );
+  };
+
+  // T041/T042: Show intro animation before main results
+  if (showIntro) {
+    if (isCollapsed) {
+      // T042: CollapseSequence animation before collapse debrief
+      return (
+        <CollapseSequence
+          reason={roomState.collapseReason || 'stability'}
+          onComplete={() => setShowIntro(false)}
+        />
+      );
+    } else if (winner) {
+      // T041: VictoryCelebration animation for victory
+      return (
+        <VictoryCelebration
+          winnerName={winner.name}
+          winnerIdeology={winner.ideology || undefined}
+          isLocalWinner={isLocalWinner}
+          onComplete={() => setShowIntro(false)}
+        />
+      );
+    }
+    // Fallback: skip intro if neither applies
+    setShowIntro(false);
+  }
 
   return (
     <div className="min-h-screen p-4">
@@ -297,65 +399,8 @@ export function Results({ roomState, localPlayerId, onPlayAgain, onHome }: Resul
           </CardContent>
         </Card>
 
-        {/* Political Concepts Learned */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <span>📚</span>
-              Political Concepts Demonstrated
-            </CardTitle>
-            <CardDescription>
-              Through this game, you experienced real political dynamics
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {/* Show relevant concepts based on game events */}
-              {POLITICAL_CONCEPTS.slice(0, 4).map((concept) => (
-                <div
-                  key={concept.id}
-                  className="rounded-lg border p-4 space-y-2"
-                >
-                  <h4 className="font-medium text-primary">{concept.name}</h4>
-                  <p className="text-sm text-muted-foreground">
-                    {concept.description}
-                  </p>
-                  <div className="text-sm bg-muted/50 rounded p-2 italic">
-                    <span className="font-medium not-italic">In this game: </span>
-                    {concept.example}
-                  </div>
-                </div>
-              ))}
-
-              {/* Expand to see more */}
-              {POLITICAL_CONCEPTS.length > 4 && (
-                <details className="group">
-                  <summary className="cursor-pointer text-sm text-primary hover:underline list-none flex items-center gap-1">
-                    <span className="group-open:rotate-90 transition-transform">▶</span>
-                    Show {POLITICAL_CONCEPTS.length - 4} more concepts
-                  </summary>
-                  <div className="mt-4 space-y-4">
-                    {POLITICAL_CONCEPTS.slice(4).map((concept) => (
-                      <div
-                        key={concept.id}
-                        className="rounded-lg border p-4 space-y-2"
-                      >
-                        <h4 className="font-medium text-primary">{concept.name}</h4>
-                        <p className="text-sm text-muted-foreground">
-                          {concept.description}
-                        </p>
-                        <div className="text-sm bg-muted/50 rounded p-2 italic">
-                          <span className="font-medium not-italic">In this game: </span>
-                          {concept.example}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </details>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+        {/* T031: GameDebrief - Political Concepts & Impact Analysis */}
+        {!isCollapsed && renderGameDebrief()}
 
         {/* Actions */}
         <div className="flex gap-4">

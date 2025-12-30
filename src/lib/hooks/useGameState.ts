@@ -13,12 +13,34 @@ import type {
   RoomStatePayload,
   PlayerStatePayload,
   TurnResultsDisplayMessage,
+  CrisisPayload,
 } from '../game/events';
 import type { Ideology, CardOptionId, VoteChoice } from '../game/types';
 
 // ============================================
 // Hook State Types
 // ============================================
+
+export interface DealBreachData {
+  breakerId: string;
+  breakerName: string;
+  victimId: string;
+  victimName: string;
+  influenceLoss: number;
+  influenceGain: number;
+}
+
+// T044b: Crisis resolution data for animation
+export interface CrisisResolutionData {
+  crisis: CrisisPayload;
+  outcome: 'success' | 'failure';
+  contributions: Array<{ playerId: string; amount: number }>;
+  nationChanges: {
+    budgetChange: number;
+    stabilityChange: number;
+  };
+  totalContribution: number;
+}
 
 export interface GameState {
   connected: boolean;
@@ -28,6 +50,8 @@ export interface GameState {
   turnResultsData: TurnResultsDisplayMessage | null;
   hasAcknowledgedResults: boolean;
   afkPlayers: Set<string>; // Player IDs currently AFK
+  dealBreachData: DealBreachData | null; // T043: Active deal breach for animation
+  crisisResolutionData: CrisisResolutionData | null; // T044b: Crisis resolution for animation
 }
 
 export interface GameActions {
@@ -42,6 +66,8 @@ export interface GameActions {
   leaveRoom: () => void;
   acknowledgeTurnResults: () => void;
   markReadyToNegotiate: () => void; // FR-019
+  clearDealBreach: () => void; // T043: Clear deal breach after animation
+  clearCrisisResolution: () => void; // T044b: Clear crisis resolution after animation
 }
 
 // ============================================
@@ -57,6 +83,8 @@ export function useGameState(roomId: string): [GameState, GameActions] {
     turnResultsData: null,
     hasAcknowledgedResults: false,
     afkPlayers: new Set(),
+    dealBreachData: null,
+    crisisResolutionData: null,
   });
 
   const localPlayerIdRef = useRef<string | null>(null);
@@ -464,6 +492,47 @@ export function useGameState(roomId: string): [GameState, GameActions] {
           };
         });
         break;
+
+      // T043: Handle deal breach events for animation
+      case 'dealBreach':
+        setState(prev => {
+          if (!prev.roomState) return prev;
+          const breaker = prev.roomState.players.find(p => p.id === message.breakerId);
+          const victim = prev.roomState.players.find(p => p.id === message.victimId);
+          return {
+            ...prev,
+            dealBreachData: {
+              breakerId: message.breakerId,
+              breakerName: breaker?.name || 'Unknown',
+              victimId: message.victimId,
+              victimName: victim?.name || 'Unknown',
+              influenceLoss: message.influenceLoss,
+              influenceGain: message.influenceGain,
+            },
+          };
+        });
+        break;
+
+      // T044b: Handle crisis resolution events for animation
+      case 'crisisResolved':
+        setState(prev => {
+          if (!prev.roomState?.activeCrisis) return prev;
+          const totalContribution = message.contributions.reduce((sum, c) => sum + c.amount, 0);
+          return {
+            ...prev,
+            crisisResolutionData: {
+              crisis: prev.roomState.activeCrisis.crisis,
+              outcome: message.outcome,
+              contributions: message.contributions,
+              nationChanges: {
+                budgetChange: message.nationChanges.budgetChange,
+                stabilityChange: message.nationChanges.stabilityChange,
+              },
+              totalContribution,
+            },
+          };
+        });
+        break;
     }
   }, []);
 
@@ -579,6 +648,16 @@ export function useGameState(roomId: string): [GameState, GameActions] {
         playerId: localPlayerIdRef.current,
       });
     }, [sendMessage]),
+
+    // T043: Clear deal breach data after animation completes
+    clearDealBreach: useCallback(() => {
+      setState(prev => ({ ...prev, dealBreachData: null }));
+    }, []),
+
+    // T044b: Clear crisis resolution data after animation completes
+    clearCrisisResolution: useCallback(() => {
+      setState(prev => ({ ...prev, crisisResolutionData: null }));
+    }, []),
   };
 
   return [state, actions];

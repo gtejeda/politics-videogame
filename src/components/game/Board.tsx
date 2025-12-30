@@ -1,22 +1,20 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { NationTrack } from './NationTrack';
-import { PlayerTrack } from './PlayerTrack';
-import { BoardPath } from './BoardPath';
-import { DecisionCard } from './DecisionCard';
-import { VotingPanel } from './VotingPanel';
-import { DiceRoll } from './DiceRoll';
-import { Timer } from './Timer';
+import { GameLayout } from './GameLayout';
+import { PlayersBar } from './PlayersBar';
+import { ActionTab } from './ActionTab';
+import { DealsTab } from './DealsTab';
+import { HistoryTab } from './HistoryTab';
 import { TurnResults } from './TurnResults';
-import { ReviewPhase } from './ReviewPhase';
-import { ProposerView } from './ProposerView';
-import { DeliberationTimer } from './DeliberationTimer';
+import { DealBreachEffect } from './DealBreachEffect';
+import { CrisisResolution } from './CrisisResolution';
+import { useTurnHistory } from '@/lib/hooks/useTurnHistory';
 import type { RoomStatePayload, TurnResultsDisplayMessage } from '@/lib/game/events';
-import type { GameActions } from '@/lib/hooks/useGameState';
-import { IDEOLOGY_DEFINITIONS } from '@/lib/game/ideologies';
+import type { GameActions, DealBreachData, CrisisResolutionData } from '@/lib/hooks/useGameState';
+import type { TurnHistoryEntry } from '@/lib/game/turn-history';
+import type { Ideology } from '@/lib/game/types';
 
 interface BoardProps {
   roomState: RoomStatePayload;
@@ -25,8 +23,18 @@ interface BoardProps {
   turnResultsData: TurnResultsDisplayMessage | null;
   hasAcknowledgedResults: boolean;
   afkPlayers?: Set<string>;
+  dealBreachData?: DealBreachData | null; // T043: Deal breach animation data
+  crisisResolutionData?: CrisisResolutionData | null; // T044b: Crisis resolution animation data
 }
 
+/**
+ * Board - Main game component with tabbed layout
+ *
+ * Structure:
+ * - PlayersBar (always visible)
+ * - Tabs: Action | Deals | History
+ * - TurnResults overlay when showing results
+ */
 export function Board({
   roomState,
   localPlayerId,
@@ -34,6 +42,8 @@ export function Board({
   turnResultsData,
   hasAcknowledgedResults,
   afkPlayers = new Set(),
+  dealBreachData,
+  crisisResolutionData,
 }: BoardProps) {
   const {
     phase,
@@ -41,201 +51,169 @@ export function Board({
     activePlayerId,
     currentCard,
     currentProposal,
-    diceRoll,
-    timerEndAt,
     players,
+    tokens,
     nation,
     settings,
+    activeDeals,
   } = roomState;
 
-  const isMyTurn = activePlayerId === localPlayerId;
-  const activePlayer = players.find(p => p.id === activePlayerId);
-  const localPlayer = players.find(p => p.id === localPlayerId);
+  // Turn history management
+  const { turnHistory, addTurnEntry } = useTurnHistory();
 
-  // FR-019: Get ready/waiting counts for two-phase voting
-  const readyToNegotiate = roomState.readyToNegotiate || [];
-  const readyPlayerCount = readyToNegotiate.length;
-  const totalPlayerCount = players.length;
-  const isLocalPlayerReady = localPlayerId ? readyToNegotiate.includes(localPlayerId) : false;
+  // Track nation state before turn for history
+  const [nationBeforeTurn, setNationBeforeTurn] = useState(nation);
 
-  // Get phase display text
-  const phaseText = useMemo(() => {
-    switch (phase) {
-      case 'waiting':
-        return isMyTurn ? 'Your Turn - Roll the Dice' : `${activePlayer?.name}'s Turn`;
-      case 'rolling':
-        return 'Rolling...';
-      case 'drawing':
-        return 'Drawing Card...';
-      case 'reviewing':
-        return isMyTurn ? 'Review & Select Option' : 'Review Phase';
-      case 'deliberating':
-        return 'Negotiation Phase';
-      case 'proposing':
-        return 'Choosing Proposal...';
-      case 'voting':
-        return 'Voting Phase';
-      case 'revealing':
-        return 'Revealing Votes...';
-      case 'resolving':
-        return 'Resolving Turn...';
-      case 'showingResults':
-        return 'Turn Results';
-      case 'crisis':
-        return 'Crisis Event!';
-      default:
-        return '';
+  // Update nation state tracker at turn start
+  useEffect(() => {
+    if (phase === 'waiting') {
+      setNationBeforeTurn(nation);
     }
-  }, [phase, isMyTurn, activePlayer]);
+  }, [phase, nation]);
+
+  // Create turn history entry when results are shown
+  useEffect(() => {
+    if (turnResultsData && currentCard) {
+      const activePlayer = players.find((p) => p.id === activePlayerId);
+      const selectedOption = currentCard?.options.find((o) => o.id === currentProposal);
+
+      if (activePlayer && selectedOption) {
+        // Create player ideology map
+        const playerIdeologyMap = new Map<string, { ideology: Ideology }>();
+        players.forEach((p) => {
+          if (p.ideology) {
+            playerIdeologyMap.set(p.id, { ideology: p.ideology });
+          }
+        });
+
+        // Calculate player positions before/after
+        const playerPositionsBefore = new Map<string, number>();
+        turnResultsData.playerEffects.forEach((pe) => {
+          const movement = pe.movementBreakdown.total;
+          const currentPlayer = players.find((p) => p.id === pe.playerId);
+          if (currentPlayer) {
+            playerPositionsBefore.set(pe.playerId, currentPlayer.position - movement);
+          }
+        });
+
+        const yesVotes = turnResultsData.voteResults.yesVotes;
+        const noVotes = turnResultsData.voteResults.noVotes;
+        const higher = yesVotes > noVotes ? yesVotes : noVotes;
+        const lower = yesVotes > noVotes ? noVotes : yesVotes;
+
+        const entry: TurnHistoryEntry = {
+          turnNumber: turnResultsData.turnNumber,
+          timestamp: Date.now(),
+          activePlayerId: activePlayer.id,
+          activePlayerName: activePlayer.name,
+          activePlayerIdeology: activePlayer.ideology || 'progressive',
+          proposal: {
+            cardId: currentCard.id,
+            cardTitle: currentCard.title,
+            cardCategory:
+              currentCard.zone === 'earlyTerm'
+                ? 'early-term'
+                : currentCard.zone === 'midTerm'
+                  ? 'mid-term'
+                  : currentCard.zone === 'crisisZone'
+                    ? 'crisis-zone'
+                    : 'late-term',
+            optionChosen: selectedOption.name,
+            nationImpact: {
+              budgetEffect: selectedOption.budgetChange,
+              stabilityEffect: selectedOption.stabilityChange,
+            },
+          },
+          votes: turnResultsData.voteResults.votes.map((v) => {
+            const playerData = playerIdeologyMap.get(v.playerId);
+            return {
+              playerId: v.playerId,
+              playerName: v.playerName,
+              playerIdeology: playerData?.ideology || 'progressive',
+              vote: v.choice,
+              influenceSpent: v.weight - 1,
+              voteWeight: v.weight,
+              alignedWithIdeology: false,
+            };
+          }),
+          outcome: turnResultsData.votePassed ? 'passed' : 'failed',
+          yesCount: yesVotes,
+          noCount: noVotes,
+          abstainCount: turnResultsData.voteResults.abstainCount,
+          margin: `${higher}-${lower}`,
+          nationChanges: {
+            budgetBefore: nationBeforeTurn.budget,
+            budgetAfter: turnResultsData.nationChanges.newBudget,
+            budgetDelta: turnResultsData.nationChanges.budgetChange,
+            stabilityBefore: nationBeforeTurn.stability,
+            stabilityAfter: turnResultsData.nationChanges.newStability,
+            stabilityDelta: turnResultsData.nationChanges.stabilityChange,
+          },
+          playerMovements: turnResultsData.playerEffects.map((pe) => {
+            const posBefore = playerPositionsBefore.get(pe.playerId) || 0;
+            const currentPlayer = players.find((p) => p.id === pe.playerId);
+            return {
+              playerId: pe.playerId,
+              playerName: pe.playerName,
+              diceRoll: pe.movementBreakdown.diceRoll,
+              ideologyModifier:
+                pe.movementBreakdown.ideologyBonus + pe.movementBreakdown.ideologyPenalty,
+              nationModifier: pe.movementBreakdown.nationModifier,
+              influenceBonus: pe.movementBreakdown.influenceModifier,
+              totalMovement: pe.movementBreakdown.total,
+              positionBefore: posBefore,
+              positionAfter: currentPlayer?.position || 0,
+            };
+          }),
+          conceptsTriggered: [],
+        };
+
+        addTurnEntry(entry);
+      }
+    }
+  }, [
+    turnResultsData,
+    currentCard,
+    activePlayerId,
+    currentProposal,
+    players,
+    nationBeforeTurn,
+    addTurnEntry,
+  ]);
 
   return (
-    <div className="min-h-screen p-4">
-      <div className="mx-auto max-w-4xl space-y-4">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold">Turn {currentTurn}</h1>
-            <p className="text-sm text-muted-foreground">{phaseText}</p>
-          </div>
-          {/* FR-021: Show timer during deliberation phase */}
-          {timerEndAt && phase === 'deliberating' && !roomState.timerStartedAt && (
-            <Timer endAt={timerEndAt} />
-          )}
-        </div>
-
-        {/* FR-021: Full Deliberation Timer during Negotiation Phase */}
-        {phase === 'deliberating' && roomState.timerStartedAt && roomState.recommendedDuration && (
-          <DeliberationTimer
-            timerStartedAt={roomState.timerStartedAt}
-            recommendedDuration={roomState.recommendedDuration}
-            canPropose={isMyTurn && !currentProposal}
-            hasProposed={!!currentProposal}
+    <>
+      <GameLayout
+        playersBar={
+          <PlayersBar
+            nation={nation}
+            players={players}
+            activePlayerId={activePlayerId}
+            localPlayerId={localPlayerId}
+            currentTurn={currentTurn}
+            pathLength={settings.pathLength}
+            afkPlayers={afkPlayers}
           />
-        )}
-
-        {/* Nation State */}
-        <Card>
-          <CardHeader className="py-3">
-            <CardTitle className="text-sm">Nation Status</CardTitle>
-          </CardHeader>
-          <CardContent className="py-2">
-            <NationTrack nation={nation} />
-          </CardContent>
-        </Card>
-
-        {/* Board Path - Main Game Board */}
-        <Card>
-          <CardHeader className="py-3">
-            <CardTitle className="text-sm">Government Term Path</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <BoardPath
-              players={players}
-              pathLength={settings.pathLength}
-              localPlayerId={localPlayerId}
-            />
-          </CardContent>
-        </Card>
-
-        {/* Main Game Area */}
-        <div className="grid gap-4 lg:grid-cols-3">
-          {/* Left: Player Tracks */}
-          <Card className="lg:col-span-1">
-            <CardHeader className="py-3">
-              <CardTitle className="text-sm">Players</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {players.map(player => (
-                <PlayerTrack
-                  key={player.id}
-                  player={player}
-                  isActive={player.id === activePlayerId}
-                  isLocal={player.id === localPlayerId}
-                  pathLength={settings.pathLength}
-                  isAfk={afkPlayers.has(player.id)}
-                />
-              ))}
-            </CardContent>
-          </Card>
-
-          {/* Center/Right: Game Actions */}
-          <div className="space-y-4 lg:col-span-2">
-            {/* Dice Roll (waiting phase) */}
-            {phase === 'waiting' && isMyTurn && (
-              <DiceRoll onRoll={gameActions.rollDice} />
-            )}
-
-            {/* Dice Result (after roll) */}
-            {diceRoll && phase !== 'waiting' && (
-              <div className="text-center">
-                <span className="text-sm text-muted-foreground">Dice Roll: </span>
-                <span className="text-2xl font-bold">{diceRoll}</span>
-              </div>
-            )}
-
-            {/* FR-019: Review Phase - Proposer View */}
-            {phase === 'reviewing' && currentCard && isMyTurn && (
-              <ProposerView
-                card={currentCard}
-                localPlayerIdeology={localPlayer?.ideology || null}
-                selectedOption={currentProposal}
-                onPropose={gameActions.proposeOption}
-                readyPlayerCount={readyPlayerCount}
-                totalPlayerCount={totalPlayerCount}
-              />
-            )}
-
-            {/* FR-019: Review Phase - Non-proposer View */}
-            {phase === 'reviewing' && currentCard && !isMyTurn && (
-              <ReviewPhase
-                card={currentCard}
-                localPlayerIdeology={localPlayer?.ideology || null}
-                proposerName={activePlayer?.name || 'Player'}
-                isReady={isLocalPlayerReady}
-                onMarkReady={gameActions.markReadyToNegotiate}
-              />
-            )}
-
-            {/* Decision Card (Deliberating/Negotiation phase) */}
-            {(phase === 'deliberating' || phase === 'proposing') && currentCard && (
-              <DecisionCard
-                card={currentCard}
-                selectedOption={currentProposal}
-                canPropose={isMyTurn && !currentProposal}
-                localPlayerIdeology={localPlayer?.ideology || null}
-                onPropose={gameActions.proposeOption}
-                gamePhase={phase}
-              />
-            )}
-
-            {/* Voting Panel */}
-            {(phase === 'voting' || phase === 'revealing') && currentProposal && (
-              <VotingPanel
-                phase={phase}
-                currentProposal={currentProposal}
-                card={currentCard}
-                localPlayer={localPlayer}
-                onVote={gameActions.castVote}
-              />
-            )}
-
-            {/* Waiting message for non-active player */}
-            {phase === 'waiting' && !isMyTurn && (
-              <Card>
-                <CardContent className="py-8 text-center">
-                  <p className="text-muted-foreground">
-                    Waiting for{' '}
-                    <span className="font-medium text-foreground">
-                      {activePlayer?.name}
-                    </span>{' '}
-                    to roll...
-                  </p>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        </div>
-      </div>
+        }
+        actionContent={
+          <ActionTab
+            roomState={roomState}
+            localPlayerId={localPlayerId}
+            gameActions={gameActions}
+            afkPlayers={afkPlayers}
+          />
+        }
+        dealsContent={
+          <DealsTab
+            localPlayerId={localPlayerId}
+            players={players}
+            tokens={tokens}
+            activeDeals={activeDeals}
+          />
+        }
+        historyContent={<HistoryTab turnHistory={turnHistory} currentTurn={currentTurn} />}
+        currentPhase={phase}
+      />
 
       {/* Turn Results Full-Screen Overlay */}
       <AnimatePresence>
@@ -249,6 +227,29 @@ export function Board({
           />
         )}
       </AnimatePresence>
-    </div>
+
+      {/* T043: Deal Breach Animation Overlay */}
+      {dealBreachData && (
+        <DealBreachEffect
+          isActive={!!dealBreachData}
+          breakerName={dealBreachData.breakerName}
+          victimName={dealBreachData.victimName}
+          onComplete={gameActions.clearDealBreach}
+        />
+      )}
+
+      {/* T044b: Crisis Resolution Animation Overlay */}
+      {crisisResolutionData && (
+        <CrisisResolution
+          crisis={crisisResolutionData.crisis}
+          contributions={crisisResolutionData.contributions}
+          players={players}
+          outcome={crisisResolutionData.outcome}
+          totalContribution={crisisResolutionData.totalContribution}
+          nationChanges={crisisResolutionData.nationChanges}
+          onComplete={gameActions.clearCrisisResolution}
+        />
+      )}
+    </>
   );
 }
